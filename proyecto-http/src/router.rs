@@ -1,14 +1,42 @@
-/* 
-Tabla de enrutamiento path → Command (enum con todas las rutas del proyecto).
+//! Enrutador HTTP → “comandos” conocidos.
+//!
+//! Por ahora no definimos un enum Command completo porque en Sprint 0
+//! solo queremos demostrar que el path se reconoce.
+//!
+//! La función clave aquí es `handle_early(path, req_id)`: si la ruta es conocida,
+//! devolvemos un JSON “placeholder” (200 OK). Si no, `None` y el core responderá 404.
 
-route_path(&str) -> Option<Command>: mapea la URL a un comando (e.g. /isprime → Command::IsPrime).
+#[derive(Clone, Debug)]
+pub struct Router;
 
-handle_early(&Request) -> Option<Response>: placeholder para Sprint 0; responde 200 con JSON { "routed": ... } si el path es válido, o 404 si no existe.
+impl Router {
+    /// Construye el router (podríamos aquí registrar todas las rutas).
+    pub fn new() -> Self { Self }
 
-Futuro:
+    /// Sprint 0: respuesta temprana si la ruta es conocida.
+    /// Devuelve `Some(body_json)` si el path existe, o `None` si no existe.
+    pub fn handle_early(&self, path: &str, req_id: &str) -> Option<String> {
+        // Conjunto mínimo de rutas conocidas para probar el flujo end-to-end.
+        // (Más tarde se ampliará a todas las del proyecto)
+        const KNOWN: [&str; 8] = [
+            "/status",
+            "/timestamp",
+            "/reverse",
+            "/toupper",
+            "/isprime",
+            "/help",
+            "/sleep",
+            "/fibonacci",
+        ];
 
-Validación temprana de parámetros (tipos, rangos).
-
-Elección de prioridad (low/normal/high) desde query o header.
-
-Decisión “ejecución directa vs encolar” (best effort). */
+        if KNOWN.contains(&path) {
+            // JSON “placeholder” para ver que enruta:
+            Some(format!(
+                r#"{{"status":"routed","path":"{}","request_id":"{}"}}"#,
+                path, req_id
+            ))
+        } else {
+            None
+        }
+    }
+}

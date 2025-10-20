@@ -7,11 +7,12 @@
 //! - `handle_connection()` (lee → parsea → consulta router → responde).
 //!
 //! Este archivo NO resuelve endpoints reales todavía; solo arma el flujo.
-
+ 
 use std::io::{Read, Write};
 use std::net::{TcpListener, TcpStream};
 use std::sync::Arc;
 use std::time::{SystemTime, UNIX_EPOCH};
+use std::collections::HashMap;
 
 use crate::config::Config;
 use crate::router::Router;
@@ -101,11 +102,27 @@ fn handle_connection(state: &Shared, stream: &mut TcpStream, req_id: &str) -> st
         return write_response(stream, 501, "Not Implemented", req_id, body.as_bytes());
     }
 
-    // Separar path vs query. (Guardamos solo el path aquí.)
-    let path = target.split('?').next().unwrap_or("/");
+    // Separar path vs query y parsear query parameters
+    let (path, query_string) = if let Some(pos) = target.find('?') {
+        (&target[..pos], Some(&target[pos + 1..]))
+    } else {
+        (target, None)
+    };
+
+    // Parsear query parameters
+    let mut query_params = HashMap::new();
+    if let Some(query) = query_string {
+        for param in query.split('&') {
+            if let Some(eq_pos) = param.find('=') {
+                let key = &param[..eq_pos];
+                let value = &param[eq_pos + 1..];
+                query_params.insert(key.to_string(), value.to_string());
+            }
+        }
+    }
 
     // Preguntar al router si reconoce la ruta
-    if let Some(body) = state.router.handle_early(path, req_id) {
+    if let Some(body) = state.router.handle_early(path, req_id, &query_params) {
         write_response(stream, 200, "OK", req_id, body.as_bytes())
     } else {
         let body = format!(

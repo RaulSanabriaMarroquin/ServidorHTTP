@@ -1,17 +1,19 @@
-//! Núcleo HTTP/1.0 (Sprint 0 y base para Sprint 1).
+//! Núcleo HTTP/1.0 (Sprint 0/1/2 - con pools de workers).
 //!
 //! Expone:
-//! - `AppState`  : estado global (config, router, timestamps y métricas).
+//! - `AppState`  : estado global (config, router, timestamps, métricas, pools).
 //! - `Shared`    : alias `Arc<AppState>` para compartir estado entre hilos.
 //! - `Request`   : representación mínima de una petición HTTP (GET).
 //! - `http_listen_loop()` : loop principal que acepta conexiones.
-//! - `handle_connection()` : lee → parsea → rutea → escribe respuesta.
+//! - `handle_connection()` : lee → parsea → rutea → encola tarea en pool → worker responde.
 //!
 //! Notas clave de diseño:
 //! - HTTP/1.0 sin keep-alive: una petición por conexión y se cierra.
 //! - Solo GET en Sprint 0/1. Otros métodos devuelven 501.
 //! - La query `?a=1&b=2` se parsea a `HashMap<String, String>`.
 //! - Métricas mínimas (`accepted`/`handled`) protegidas con Mutex (requisito del curso).
+//! - En Sprint 2, la ejecución del handler se hace en un pool (basic/cpu/io) y
+//!   el worker escribe la respuesta en el `TcpStream` clonado.
 
 use std::collections::HashMap;
 use std::io::{Read, Write};
@@ -20,15 +22,11 @@ use std::sync::Arc;
 use std::thread;
 
 use crate::config::Config;
-use crate::metrics::Metrics;  // Arc<Mutex<...>> por dentro (cumple Arc/Mutex)
-use crate::router::Router;
+use crate::metrics::Metrics; // Arc<Mutex<...>> por dentro
+use crate::router::{Route, Router};
+use crate::workers::{Backpressure, HandlerFn, Pools, WorkQueue};
 
 /// Representa una petición HTTP simplificada para nuestros handlers.
-/// - `method`      : "GET"
-/// - `path`        : "/reverse"
-/// - `query`       : {"text": "hola"}
-/// - `http_version`: "HTTP/1.0" o "HTTP/1.1" (solo informativo por ahora)
-/// - `request_id`  : id útil para trazabilidad / logs
 #[derive(Debug, Clone)]
 pub struct Request {
     pub method: String,
@@ -45,6 +43,7 @@ pub struct AppState {
     pub router: Router,
     pub started_ms: u128,
     pub metrics: Arc<Metrics>, // contadores protegidos con Mutex
+    pub pools: Arc<Pools>,     // pools de workers (basic/cpu/io)
 }
 
 /// Alias práctico: `Shared` es un `Arc<AppState>`.
@@ -60,24 +59,37 @@ pub fn now_ms_since_epoch() -> u128 {
 }
 
 impl AppState {
-    /// Construye el `Shared` listo para pasar a `http_listen_loop`.
+    /// Construcción en DOS PASOS porque `Pools::new(&Shared)` necesita el Shared ya creado:
+    /// 1) Creamos un `AppState` dummy con `Pools::new_dummy()`.
+    /// 2) Construimos los Pools reales con `Pools::new(&dummy)`.
+    /// 3) Retornamos un `AppState` igual al dummy pero con `pools` reales.
     pub fn shared(cfg: Config, router: Router) -> Shared {
         let started_ms = now_ms_since_epoch();
-        Arc::new(AppState {
+
+        // Paso 1: AppState "dummy"
+        let dummy = Arc::new(AppState {
             cfg,
             router,
             started_ms,
             metrics: Arc::new(Metrics::default()),
+            pools: Arc::new(Pools::new_dummy()),
+        });
+
+        // Paso 2: Pools reales, ahora que tenemos &Shared disponible
+        let pools_real = Arc::new(Pools::new(&dummy));
+
+        // Paso 3: construir el AppState definitivo sustituyendo los pools
+        Arc::new(AppState {
+            cfg: dummy.cfg.clone(),
+            router: dummy.router.clone(),
+            started_ms: dummy.started_ms,
+            metrics: Arc::clone(&dummy.metrics),
+            pools: pools_real,
         })
     }
 }
 
 /// Inicia el listener HTTP/1.0 y atiende conexiones en hilos cortos.
-/// - `bind(0.0.0.0:port)`
-/// - `accept()` loop:
-///     - incrementa métricas `accepted`
-///     - spawn hilo: `handle_connection(...)`
-///     - al terminar el hilo incrementa `handled`
 pub fn http_listen_loop(state: &Shared) -> std::io::Result<()> {
     let addr = format!("0.0.0.0:{}", state.cfg.port);
     let listener = TcpListener::bind(&addr)?;
@@ -109,121 +121,157 @@ pub fn http_listen_loop(state: &Shared) -> std::io::Result<()> {
     Ok(())
 }
 
-/// Lee UNA petición (HTTP/1.0), la parsea y escribe la respuesta completa:
-/// - Si no es GET → 501
-/// - Si el router no reconoce la ruta → 404
-/// - Si la reconoce → devuelve (status, content_type, body) y se escriben headers+body
-fn handle_connection(state: &Shared, stream: &mut TcpStream, req_id: &str) -> std::io::Result<()> {
-    // 1) Leer hasta 8KB (suficiente para Sprint 0/1).
+/// Lee UNA petición (HTTP/1.0), la parsea y la encola en el pool según la ruta.
+/// El worker ejecuta el handler y escribe la respuesta en el stream clonado.
+pub fn handle_connection(
+    state: &Shared,
+    stream: &mut TcpStream,
+    req_id: &str,
+) -> std::io::Result<()> {
+    // 1) leer request
     let mut buf = [0u8; 8192];
     let n = stream.read(&mut buf)?;
     if n == 0 {
-        // Cliente cerró inmediatamente o envió vacío.
         return Ok(());
     }
     let raw = String::from_utf8_lossy(&buf[..n]);
 
-    // 2) Parsear la request-line: "GET /ruta?query HTTP/1.0"
+    // 2) parsear request-line
     let mut lines = raw.lines();
     let req_line = lines.next().unwrap_or_default();
     let mut parts = req_line.split_whitespace();
-    let method = parts.next().unwrap_or("").to_string();
+    let method = parts.next().unwrap_or("");
     let target = parts.next().unwrap_or("/");
-    let httpver = parts.next().unwrap_or("HTTP/1.0").to_string();
+    let _httpver = parts.next().unwrap_or("HTTP/1.0");
 
-    // 3) Solo soportamos GET por ahora.
+    // 3) Solo GET por ahora
     if method != "GET" {
         let body = format!(
             r#"{{"error":"not_implemented","method":"{}","request_id":"{}"}}"#,
             method, req_id
         );
-        return write_full_response(
-            stream,
-            501,
-            "application/json",
-            body.as_bytes(),
-            req_id,
-        );
+        return write_response(stream, 501, "Not Implemented", req_id, body.as_bytes());
     }
 
-    // 4) Separar path y query-string.
-    let (path, query_map) = split_path_and_query(target);
+    // 4) path + query
+    let (path, query_map) = if let Some((p, q)) = target.split_once('?') {
+        (p.to_string(), parse_query(q))
+    } else {
+        (target.to_string(), HashMap::new())
+    };
 
-    // 5) Armar `Request` para el router/handlers.
+    // 5) construir Request para el handler
     let req = Request {
-        method,
-        path: path.to_string(),
+        method: "GET".into(),
+        path: path.clone(),
         query: query_map,
-        http_version: httpver,
+        http_version: "HTTP/1.0".into(),
         request_id: req_id.to_string(),
     };
 
-    // 6) Ruteo: el router devuelve (status, content_type, body)
-    let (status, content_type, body) = state.router.route(state, &req);
-
-    // 7) Escribir respuesta completa y cerrar (HTTP/1.0)
-    write_full_response(stream, status, content_type, &body, req_id)
-}
-
-/// Divide `"/ruta?x=1&y=2"` en:
-/// - `"/ruta"`
-/// - `HashMap{ "x"->"1", "y"->"2" }`
-/// *No* decodifica URL (Sprint 1 simple); se puede agregar en sprints futuros.
-fn split_path_and_query(target: &str) -> (&str, HashMap<String, String>) {
-    let mut query_map = HashMap::new();
-    let mut it = target.splitn(2, '?');
-    let path = it.next().unwrap_or("/");
-    if let Some(q) = it.next() {
-        for pair in q.split('&') {
-            if pair.is_empty() { continue; }
-            let mut kv = pair.splitn(2, '=');
-            let k = kv.next().unwrap_or("").to_string();
-            let v = kv.next().unwrap_or("").to_string();
-            if !k.is_empty() {
-                query_map.insert(k, v);
-            }
+    // 6) resolver ruta → (pool, handler)
+    match state.router.route(&req.path) {
+        Route::Basic(handler) => enqueue_on_pool(stream, req, handler, &state.pools.basic, state),
+        Route::Cpu(handler) => enqueue_on_pool(stream, req, handler, &state.pools.cpu, state),
+        Route::Io(handler) => enqueue_on_pool(stream, req, handler, &state.pools.io, state),
+        Route::NotFound => {
+            let body = format!(
+                r#"{{"error":"not_found","path":"{}","request_id":"{}"}}"#,
+                path, req_id
+            );
+            write_response(stream, 404, "Not Found", req_id, body.as_bytes())
         }
     }
-    (path, query_map)
 }
 
-/// Serializa una respuesta HTTP/1.0 completa:
-/// - Status line  : "HTTP/1.0 200 OK"
-/// - Headers      : Content-Type, Content-Length, X-Request-Id
-/// - Body         : bytes
+/// Convierte la query-string `a=1&b=2` en `HashMap`.
+fn parse_query(qs: &str) -> HashMap<String, String> {
+    let mut m = HashMap::new();
+    for pair in qs.split('&') {
+        if let Some((k, v)) = pair.split_once('=') {
+            m.insert(k.to_string(), v.to_string());
+        }
+    }
+    m
+}
+
+/// Encola la ejecución del `handler` en `pool`.
+/// El worker:
+///   - ejecuta el handler,
+///   - decide un "reason" básico para el status,
+///   - escribe la respuesta en el stream clonado.
+fn enqueue_on_pool(
+    stream: &mut TcpStream,
+    req: Request,
+    handler: HandlerFn,
+    pool: &WorkQueue,
+    state: &Shared,
+) -> std::io::Result<()> {
+    let req_cloned = req.clone();
+    let state_cloned = Arc::clone(state);
+    let mut stream_clone = stream.try_clone()?; // cada tarea escribe en su propio handle
+
+    match pool.submit(Box::new(move || {
+        let (status, _ctype, body) = handler(&state_cloned, &req_cloned);
+
+        let reason = match status {
+            200 => "OK",
+            400 => "Bad Request",
+            404 => "Not Found",
+            429 => "Too Many Requests",
+            500 => "Internal Server Error",
+            503 => "Service Unavailable",
+            _ => "OK",
+        };
+
+        let _ = write_response(
+            &mut stream_clone,
+            status,
+            reason,
+            &req_cloned.request_id,
+            &body,
+        );
+    })) {
+        Ok(()) => Ok(()),
+        Err(Backpressure {
+            retry_after_ms,
+            queue,
+        }) => {
+            let body = format!(
+                r#"{{"error":"backpressure","queue":"{}","retry_after_ms":{}}}"#,
+                queue, retry_after_ms
+            );
+            write_response(
+                stream,
+                503,
+                "Service Unavailable",
+                &req.request_id,
+                body.as_bytes(),
+            )
+        }
+    }
+}
+
+/// Serializa una respuesta HTTP/1.0 mínima.
 /// Cierra la conexión al terminar (semántica HTTP/1.0).
-fn write_full_response(
+fn write_response(
     stream: &mut TcpStream,
     status: u16,
-    content_type: &str,
+    reason: &str,
+    req_id: &str,
     body: &[u8],
-    request_id: &str,
 ) -> std::io::Result<()> {
-    let status_line = match status {
-        200 => "HTTP/1.0 200 OK",
-        400 => "HTTP/1.0 400 Bad Request",
-        404 => "HTTP/1.0 404 Not Found",
-        409 => "HTTP/1.0 409 Conflict",
-        429 => "HTTP/1.0 429 Too Many Requests",
-        500 => "HTTP/1.0 500 Internal Server Error",
-        501 => "HTTP/1.0 501 Not Implemented",
-        503 => "HTTP/1.0 503 Service Unavailable",
-        _   => "HTTP/1.0 500 Internal Server Error",
-    };
-
-    // Headers mínimos y seguros para JSON/binary.
     let headers = format!(
-        "{status_line}\r\n\
-         Content-Type: {content_type}\r\n\
-         Content-Length: {len}\r\n\
-         X-Request-Id: {rid}\r\n\
+        "HTTP/1.0 {} {}\r\n\
+         Content-Type: application/json\r\n\
+         Content-Length: {}\r\n\
+         X-Request-Id: {}\r\n\
          \r\n",
-        status_line = status_line,
-        content_type = content_type,
-        len = body.len(),
-        rid = request_id,
+        status,
+        reason,
+        body.len(),
+        req_id
     );
-
     stream.write_all(headers.as_bytes())?;
     stream.write_all(body)?;
     stream.flush()?;

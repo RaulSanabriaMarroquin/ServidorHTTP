@@ -1,27 +1,47 @@
 //! Enrutador muy simple: mapea rutas fijas a funciones de `handlers`.
+//! Devuelve un `Route` que indica a qué pool (basic/cpu/io) y qué handler ejecutar.
 
-use crate::core::{Request, Shared};
-use crate::handlers;
+use crate::handlers::basic;
+use crate::workers::HandlerFn;
 
-#[derive(Clone)]
+/// Router sin estado. Lo hacemos `Copy` y `Default` para usarlo fácil en tests.
+#[derive(Clone, Copy, Debug, Default)]
 pub struct Router;
 
 impl Router {
-    pub fn new() -> Self { Self }
+    /// Construye un router (idéntico a `Default`).
+    pub fn new() -> Self {
+        Self
+    }
 
-    /// Decide qué handler ejecutar según `req.path`.
-    /// Devuelve `(status_code, content_type, body_bytes)`.
-    pub fn route(&self, state: &Shared, req: &Request) -> (u16, &'static str, Vec<u8>) {
-        match req.path.as_str() {
-            "/status"    => handlers::status(state, req),
-            "/timestamp" => handlers::timestamp(state, req),
-            "/reverse"   => handlers::reverse(state, req),
-            "/toupper"   => handlers::toupper(state, req),
-            "/fibonacci" => handlers::fibonacci(state, req),
-            "/isprime"   => handlers::isprime(state, req),
-            "/sleep"     => handlers::sleep(state, req),
-            "/help"      => handlers::help(state, req),
-            _ => handlers::not_found(state, req),
+    /// Decide el destino de la ruta: pool + handler.
+    pub fn route(&self, path: &str) -> Route {
+        match path {
+            // Básicos / ligeros → pool "basic"
+            "/status"    => Route::Basic(basic::status),
+            "/timestamp" => Route::Basic(basic::timestamp),
+            "/reverse"   => Route::Basic(basic::reverse),
+            "/toupper"   => Route::Basic(basic::toupper),
+            "/help"      => Route::Basic(basic::help),
+
+            // CPU-bound demostrativos → pool "cpu"
+            "/isprime"   => Route::Cpu(basic::isprime),
+            "/fibonacci" => Route::Cpu(basic::fibonacci),
+
+            // IO-bound demostrativo (aquí usamos sleep como placeholder) → pool "io"
+            "/sleep"     => Route::Io(basic::sleep),
+
+            // Desconocido
+            _ => Route::NotFound,
         }
     }
+}
+
+/// Resultado del enrutamiento: indica pool y función handler a ejecutar.
+#[derive(Clone, Copy, Debug)]
+pub enum Route {
+    Basic(HandlerFn),
+    Cpu(HandlerFn),
+    Io(HandlerFn),
+    NotFound,
 }

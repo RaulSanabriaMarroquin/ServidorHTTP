@@ -11,4 +11,7 @@ pub mod io;
     // Rutas IO-bound reales: /sortfile, /wordcount, /grep, /compress, /hashfile…
 
 // Re-exportamos las funciones básicas más usadas
-pub use self::basic::{not_found, reverse, status, timestamp, toupper};
+pub use basic::{
+    status, timestamp, reverse, toupper, not_found,
+    fibonacci, isprime, sleep, help,
+};

@@ -17,6 +17,10 @@ impl Router {
             "/timestamp" => handlers::timestamp(state, req),
             "/reverse"   => handlers::reverse(state, req),
             "/toupper"   => handlers::toupper(state, req),
+            "/fibonacci" => handlers::fibonacci(state, req),
+            "/isprime"   => handlers::isprime(state, req),
+            "/sleep"     => handlers::sleep(state, req),
+            "/help"      => handlers::help(state, req),
             _ => handlers::not_found(state, req),
         }
     }

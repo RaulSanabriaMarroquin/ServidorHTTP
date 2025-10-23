@@ -44,8 +44,13 @@ pub fn status(state: &Shared, _req: &Request) -> (u16, &'static str, Vec<u8>) {
   "queues":[
     {{"name":"{qb_name}","pending":{qb_pending},"max_depth":{qb_max},"workers":{qb_workers}}},
     {{"name":"{qc_name}","pending":{qc_pending},"max_depth":{qc_max},"workers":{qc_workers}}},
-    {{"name":"{qi_name}","pending":{qi_pending},"max_depth":{qi_max},"workers":{qi_workers}}}
-  ]
+        {{"name":"{qi_name}","pending":{qi_pending},"max_depth":{qi_max},"workers":{qi_workers}}}
+  ],
+  "config":{{
+    "workers":{{"basic":{w_basic},"cpu":{w_cpu},"io":{w_io}}}, 
+    "queues":{{"basic":{q_basic},"cpu":{q_cpu},"io":{q_io}}},
+    "timeouts_ms":{{"cpu":{t_cpu},"io":{t_io}}}
+  }}
 }}"#,
         port = state.cfg.port,
         pid = std::process::id(),
@@ -56,6 +61,10 @@ pub fn status(state: &Shared, _req: &Request) -> (u16, &'static str, Vec<u8>) {
         qb_name = qb.name, qb_pending = qb.pending, qb_max = qb.max_depth, qb_workers = qb.workers,
         qc_name = qc.name, qc_pending = qc.pending, qc_max = qc.max_depth, qc_workers = qc.workers,
         qi_name = qi.name, qi_pending = qi.pending, qi_max = qi.max_depth, qi_workers = qi.workers,
+
+        w_basic = state.cfg.workers_basic, w_cpu = state.cfg.workers_cpu, w_io = state.cfg.workers_io,
+        q_basic = state.cfg.queue_basic,   q_cpu = state.cfg.queue_cpu,   q_io = state.cfg.queue_io,
+        t_cpu   = state.cfg.timeout_cpu_ms, t_io = state.cfg.timeout_io_ms
     );
 
     json_ok(body.into_bytes())

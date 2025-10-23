@@ -153,24 +153,23 @@ const DEFAULT_QUEUE_BASIC: usize = 64;
 const DEFAULT_QUEUE_CPU: usize = 128;
 const DEFAULT_QUEUE_IO: usize = 128;
 
-impl Pools {
     /// Crea los pools reales (por ahora ignoramos `state`, pero lo dejamos
     /// en la firma porque en Sprint 3 lo usaremos para métricas y config).
+impl Pools {
     pub fn new(_state: &Shared) -> Self {
         Self {
-            basic: WorkQueue::new("basic", DEFAULT_QUEUE_BASIC, DEFAULT_WORKERS_BASIC),
-            cpu: WorkQueue::new("cpu", DEFAULT_QUEUE_CPU, DEFAULT_WORKERS_CPU),
-            io: WorkQueue::new("io", DEFAULT_QUEUE_IO, DEFAULT_WORKERS_IO),
+            basic: WorkQueue::new("basic", 64, 2),
+            cpu:   WorkQueue::new("cpu",   128, 4),
+            io:    WorkQueue::new("io",    128, 4),
         }
     }
-
-    /// Pools “dummy” para inicializar AppState antes de tener un `Shared` válido,
-    /// o para tests. No levanta hilos ni acepta carga (profundidad 0).
+    /// Pools “dummy” para tests: sin workers y profundidad 0.
     pub fn new_dummy() -> Self {
         Self {
             basic: WorkQueue::new("basic_dummy", 0, 0),
-            cpu: WorkQueue::new("cpu_dummy", 0, 0),
-            io: WorkQueue::new("io_dummy", 0, 0),
+            cpu:   WorkQueue::new("cpu_dummy",   0, 0),
+            io:    WorkQueue::new("io_dummy",    0, 0),
         }
     }
 }
+

@@ -26,6 +26,7 @@ fn main() {
     //   PROY_PORT=9090 cargo run
     //   o flags estilo --port 9090 (con un pequeño parser).
     let cfg = Config::from_env_or_default();
+    println!("[CONFIG] {:?}", cfg); // <-- añade esto para verificar
 
     // 2) Construir el router
     //

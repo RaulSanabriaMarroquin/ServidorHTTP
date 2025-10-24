@@ -1,0 +1,180 @@
+# Rust
+/target/
+Cargo.lock
+
+# Archivos de compilación
+*.pdb
+*.exe
+*.dll
+*.so
+*.dylib
+
+# Archivos de IDE
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+
+# Archivos del sistema operativo
+.DS_Store
+Thumbs.db
+desktop.ini
+
+# Archivos de logs
+*.log
+*.out
+
+# Archivos temporales del proyecto
+data/
+coverage/
+*.tmp
+*.temp
+
+# Archivos de pruebas generados
+test_*.txt
+test_*.gz
+test_*.xz
+test_*.sorted
+large_*.txt
+sample.txt
+numbers.txt
+
+# Archivos de configuración local
+.env
+.env.local
+config.local.toml
+
+# Archivos de backup
+*.bak
+*.backup
+*~
+
+# Archivos de profiling
+*.prof
+perf.data*
+
+# Archivos de análisis estático
+clippy.toml
+
+# Archivos de documentación generada
+/doc/
+/docs/
+
+# Archivos de distribución
+dist/
+build/
+
+# Archivos de Node.js (si usas herramientas web)
+node_modules/
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+
+# Archivos de Python (si usas scripts de Python)
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+.Python
+env/
+venv/
+ENV/
+env.bak/
+venv.bak/
+
+# Archivos de Java (si usas herramientas Java)
+*.class
+*.jar
+*.war
+*.ear
+*.zip
+*.tar.gz
+*.rar
+
+# Archivos de C/C++ (si usas bindings)
+*.o
+*.obj
+*.a
+*.lib
+
+# Archivos de Windows
+*.lnk
+*.url
+
+# Archivos de macOS
+.AppleDouble
+.LSOverride
+Icon?
+
+# Archivos de Linux
+.fuse_hidden*
+.directory
+.Trash-*
+.nfs*
+
+# Archivos de editor
+*.sublime-project
+*.sublime-workspace
+.vimrc
+
+# Archivos de Git
+.git/
+.gitignore.bak
+
+# Archivos de Docker
+Dockerfile.local
+docker-compose.override.yml
+
+# Archivos de CI/CD
+.github/workflows/local.yml
+.gitlab-ci-local.yml
+
+# Archivos de métricas y profiling
+*.profraw
+*.profdata
+llvm-cov-*
+
+# Archivos de tarpaulin (cobertura)
+tarpaulin-report.html
+coverage.xml
+lcov.info
+
+# Archivos de benchmark
+criterion/
+benches/target/
+
+# Archivos de fuzzing
+fuzz/target/
+fuzz/artifacts/
+
+# Archivos de WebAssembly
+*.wasm
+*.wast
+
+# Archivos de Android (si usas Rust para Android)
+android/
+*.apk
+*.aab
+
+# Archivos de iOS (si usas Rust para iOS)
+ios/
+*.ipa
+
+# Archivos de configuración específicos del entorno
+.env.development
+.env.production
+.env.test
+
+# Archivos de base de datos local
+*.db
+*.sqlite
+*.sqlite3
+
+# Archivos de cache
+.cache/
+cache/
+
+# Archivos de temporales del sistema
+/tmp/
+/temp/

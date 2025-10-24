@@ -25,6 +25,7 @@ use crate::config::Config;
 use crate::metrics::Metrics; // Arc<Mutex<...>> por dentro
 use crate::router::{Route, Router};
 use crate::workers::{Backpressure, HandlerFn, Pools, WorkQueue};
+use crate::jobs::JobStore;
 
 /// Representa una petición HTTP simplificada para nuestros handlers.
 #[derive(Debug, Clone)]
@@ -44,6 +45,7 @@ pub struct AppState {
     pub started_ms: u128,
     pub metrics: Arc<Metrics>, // contadores protegidos con Mutex
     pub pools: Arc<Pools>,     // pools de workers (basic/cpu/io)
+    pub job_store: Arc<JobStore>, // sistema de jobs
 }
 
 /// Alias práctico: `Shared` es un `Arc<AppState>`.
@@ -73,6 +75,7 @@ impl AppState {
             started_ms,
             metrics: Arc::new(Metrics::default()),
             pools: Arc::new(Pools::new_dummy()),
+            job_store: Arc::new(JobStore::new()),
         });
 
         // Paso 2: Pools reales, ahora que tenemos &Shared disponible
@@ -85,6 +88,7 @@ impl AppState {
             started_ms: dummy.started_ms,
             metrics: Arc::clone(&dummy.metrics),
             pools: pools_real,
+            job_store: Arc::clone(&dummy.job_store),
         })
     }
 }

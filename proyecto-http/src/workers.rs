@@ -104,7 +104,7 @@ impl WorkQueue {
         }
 
         // Envolvemos para decrementar pending al terminar (por si futuros productores no lo hacen)
-        let pending_i = Arc::clone(&self.pending);
+        let _pending_i = Arc::clone(&self.pending);
         let wrapped = Box::new(move || {
             // Ejecuta la tarea original
             task();

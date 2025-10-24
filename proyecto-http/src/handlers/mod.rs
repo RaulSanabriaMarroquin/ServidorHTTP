@@ -10,6 +10,9 @@ pub mod cpu;
 pub mod io;
     // Rutas IO-bound reales: /sortfile, /wordcount, /grep, /compress, /hashfile…
 
+pub mod jobs;
+    // Sistema de Jobs: /jobs/submit, /jobs/status, /jobs/result, /jobs/cancel
+
 // Re-exportamos las funciones básicas más usadas
 pub use basic::{
     status, timestamp, reverse, toupper, not_found,

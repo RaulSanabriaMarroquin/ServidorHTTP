@@ -95,6 +95,323 @@ pub fn toupper(_state: &Shared, req: &Request) -> (u16, &'static str, Vec<u8>) {
     }
 }
 
+/// GET /random?count=n&min=a&max=b
+pub fn random(_state: &Shared, req: &Request) -> (u16, &'static str, Vec<u8>) {
+    let default_count = "5".to_string();
+    let default_min = "1".to_string();
+    let default_max = "100".to_string();
+    
+    let count_param = req.query.get("count").unwrap_or(&default_count);
+    let min_param = req.query.get("min").unwrap_or(&default_min);
+    let max_param = req.query.get("max").unwrap_or(&default_max);
+    
+    let count = match count_param.parse::<u32>() {
+        Ok(val) => val,
+        Err(_) => return bad_request("Parameter 'count' must be a valid positive integer"),
+    };
+    
+    let min_val = match min_param.parse::<i32>() {
+        Ok(val) => val,
+        Err(_) => return bad_request("Parameter 'min' must be a valid integer"),
+    };
+    
+    let max_val = match max_param.parse::<i32>() {
+        Ok(val) => val,
+        Err(_) => return bad_request("Parameter 'max' must be a valid integer"),
+    };
+    
+    if count == 0 || count > 1000 {
+        return bad_request("Parameter 'count' must be between 1 and 1000");
+    }
+    
+    if min_val >= max_val {
+        return bad_request("Parameter 'min' must be less than 'max'");
+    }
+    
+    // Generar números aleatorios simples
+    let mut numbers = Vec::new();
+    for i in 0..count {
+        let seed = now_ms_since_epoch() + i as u128;
+        let range = max_val - min_val + 1;
+        let random_num = min_val + ((seed % range as u128) as i32);
+        numbers.push(random_num);
+    }
+    
+    let numbers_json = serde_json::to_string(&numbers).unwrap_or_else(|_| "[]".to_string());
+    let body = format!(
+        r#"{{"count":{},"min":{},"max":{},"numbers":{}}}"#,
+        count, min_val, max_val, numbers_json
+    );
+    
+    json_ok(body.into_bytes())
+}
+
+/// GET /hash?text=someinput
+pub fn hash(_state: &Shared, req: &Request) -> (u16, &'static str, Vec<u8>) {
+    let default_text = "hello world".to_string();
+    let text_param = req.query.get("text").unwrap_or(&default_text);
+    
+    if text_param.is_empty() {
+        return bad_request("Parameter 'text' cannot be empty");
+    }
+    
+    // Calcular hash simple
+    use std::collections::hash_map::DefaultHasher;
+    use std::hash::{Hash, Hasher};
+    
+    let mut hasher = DefaultHasher::new();
+    text_param.hash(&mut hasher);
+    let hash_value = hasher.finish();
+    
+    let body = format!(
+        r#"{{"text":"{}","hash":"{:x}"}}"#,
+        text_param, hash_value
+    );
+    
+    json_ok(body.into_bytes())
+}
+
+/// GET /simulate?seconds=s&task=name
+pub fn simulate(_state: &Shared, req: &Request) -> (u16, &'static str, Vec<u8>) {
+    let default_seconds = "2".to_string();
+    let default_task = "cpu_intensive".to_string();
+    
+    let seconds_param = req.query.get("seconds").unwrap_or(&default_seconds);
+    let task_param = req.query.get("task").unwrap_or(&default_task);
+    
+    let seconds = match seconds_param.parse::<u64>() {
+        Ok(val) => val,
+        Err(_) => return bad_request("Parameter 'seconds' must be a valid positive integer"),
+    };
+    
+    if seconds > 10 {
+        return bad_request("Parameter 'seconds' must be <= 10");
+    }
+    
+    let start = now_ms_since_epoch();
+    
+    match task_param.as_str() {
+        "cpu_intensive" => {
+            // Simular trabajo CPU-intensivo
+            let mut result = 0u64;
+            for i in 0..(seconds * 1_000_000) {
+                result += i;
+            }
+            let elapsed = now_ms_since_epoch() - start;
+            
+            let body = format!(
+                r#"{{"task":"{}","seconds":{},"result":{},"elapsed_ms":{}}}"#,
+                task_param, seconds, result, elapsed
+            );
+            json_ok(body.into_bytes())
+        },
+        "io_intensive" => {
+            // Simular trabajo IO-intensivo
+            std::thread::sleep(std::time::Duration::from_secs(seconds));
+            let elapsed = now_ms_since_epoch() - start;
+            
+            let body = format!(
+                r#"{{"task":"{}","seconds":{},"elapsed_ms":{}}}"#,
+                task_param, seconds, elapsed
+            );
+            json_ok(body.into_bytes())
+        },
+        _ => bad_request("Parameter 'task' must be 'cpu_intensive' or 'io_intensive'"),
+    }
+}
+
+/// GET /loadtest?tasks=n&sleep=x
+pub fn loadtest(_state: &Shared, req: &Request) -> (u16, &'static str, Vec<u8>) {
+    let default_tasks = "10".to_string();
+    let default_sleep = "100".to_string();
+    
+    let tasks_param = req.query.get("tasks").unwrap_or(&default_tasks);
+    let sleep_param = req.query.get("sleep").unwrap_or(&default_sleep);
+    
+    let tasks = match tasks_param.parse::<u32>() {
+        Ok(val) => val,
+        Err(_) => return bad_request("Parameter 'tasks' must be a valid positive integer"),
+    };
+    
+    let sleep_ms = match sleep_param.parse::<u64>() {
+        Ok(val) => val,
+        Err(_) => return bad_request("Parameter 'sleep' must be a valid positive integer"),
+    };
+    
+    if tasks == 0 || tasks > 100 {
+        return bad_request("Parameter 'tasks' must be between 1 and 100");
+    }
+    
+    if sleep_ms > 1000 {
+        return bad_request("Parameter 'sleep' must be <= 1000 milliseconds");
+    }
+    
+    let start = now_ms_since_epoch();
+    let mut results = Vec::new();
+    
+    for _i in 0..tasks {
+        let task_start = now_ms_since_epoch();
+        std::thread::sleep(std::time::Duration::from_millis(sleep_ms));
+        let task_elapsed = now_ms_since_epoch() - task_start;
+        results.push(task_elapsed);
+    }
+    
+    let total_elapsed = now_ms_since_epoch() - start;
+    let avg_elapsed = results.iter().sum::<u128>() / tasks as u128;
+    
+    let results_json = serde_json::to_string(&results).unwrap_or_else(|_| "[]".to_string());
+    let body = format!(
+        r#"{{"tasks":{},"sleep_ms":{},"total_elapsed_ms":{},"avg_task_elapsed_ms":{},"results":{}}}"#,
+        tasks, sleep_ms, total_elapsed, avg_elapsed, results_json
+    );
+    
+    json_ok(body.into_bytes())
+}
+
+/// GET /createfile?name=filename&content=text&repeat=x
+pub fn createfile(_state: &Shared, req: &Request) -> (u16, &'static str, Vec<u8>) {
+    let name_param = req.query.get("name");
+    let content_param = req.query.get("content");
+    let default_repeat = "1".to_string();
+    let repeat_param = req.query.get("repeat").unwrap_or(&default_repeat);
+    
+    if name_param.is_none() || content_param.is_none() {
+        return bad_request("Parameters 'name' and 'content' are required");
+    }
+    
+    let filename = name_param.unwrap();
+    let content = content_param.unwrap();
+    
+    let repeat = match repeat_param.parse::<u32>() {
+        Ok(val) => val,
+        Err(_) => return bad_request("Parameter 'repeat' must be a valid positive integer"),
+    };
+    
+    if filename.is_empty() {
+        return bad_request("Parameter 'name' cannot be empty");
+    }
+    
+    if repeat == 0 || repeat > 1000 {
+        return bad_request("Parameter 'repeat' must be between 1 and 1000");
+    }
+    
+    // Crear directorio data si no existe
+    std::fs::create_dir_all("data").unwrap_or_default();
+    
+    // Construir contenido repetido
+    let mut file_content = String::new();
+    for _ in 0..repeat {
+        file_content.push_str(content);
+        file_content.push('\n');
+    }
+    
+    // Escribir archivo
+    let file_path = format!("data/{}", filename);
+    match std::fs::write(&file_path, file_content) {
+        Ok(_) => {
+            let file_size = std::fs::metadata(&file_path)
+                .map(|m| m.len())
+                .unwrap_or(0);
+            
+            let body = format!(
+                r#"{{"filename":"{}","file_path":"{}","content_length":{},"repeat":{},"file_size_bytes":{}}}"#,
+                filename, file_path, content.len(), repeat, file_size
+            );
+            json_ok(body.into_bytes())
+        },
+        Err(e) => {
+            let body = format!(
+                r#"{{"error":"file_error","message":"Failed to create file: {}","filename":"{}"}}"#,
+                e, filename
+            );
+            bad_request(&body)
+        }
+    }
+}
+
+/// GET /deletefile?name=filename
+pub fn deletefile(_state: &Shared, req: &Request) -> (u16, &'static str, Vec<u8>) {
+    let name_param = req.query.get("name");
+    
+    if name_param.is_none() {
+        return bad_request("Parameter 'name' is required");
+    }
+    
+    let filename = name_param.unwrap();
+    
+    if filename.is_empty() {
+        return bad_request("Parameter 'name' cannot be empty");
+    }
+    
+    // Intentar eliminar archivo
+    let file_path = format!("data/{}", filename);
+    match std::fs::remove_file(&file_path) {
+        Ok(_) => {
+            let body = format!(
+                r#"{{"filename":"{}","file_path":"{}","message":"File deleted successfully"}}"#,
+                filename, file_path
+            );
+            json_ok(body.into_bytes())
+        },
+        Err(e) => {
+            let body = format!(
+                r#"{{"error":"file_error","message":"Failed to delete file: {}","filename":"{}","file_path":"{}"}}"#,
+                e, filename, file_path
+            );
+            bad_request(&body)
+        }
+    }
+}
+
+/// GET /metrics
+pub fn metrics(state: &Shared, _req: &Request) -> (u16, &'static str, Vec<u8>) {
+    let detailed_metrics = state.metrics.detailed_snapshot();
+    
+    // Snapshots de colas
+    let qb = state.pools.basic.snapshot();
+    let qc = state.pools.cpu.snapshot();
+    let qi = state.pools.io.snapshot();
+    
+    // Calcular throughput
+    let uptime_ms = now_ms_since_epoch() - state.started_ms;
+    let requests_per_second = if uptime_ms > 0 { 
+        (detailed_metrics.handled * 1000) / uptime_ms as u64 
+    } else { 
+        0 
+    };
+    
+    let body = format!(
+        r#"{{"requests":{{"accepted":{},"handled":{},"errors":{}}},"queues":{{"basic":{{"pending":{},"max_depth":{},"workers":{}}},"cpu":{{"pending":{},"max_depth":{},"workers":{}}},"io":{{"pending":{},"max_depth":{},"workers":{}}}}},"workers":{{"basic":{{"total":{},"busy":{}}},"cpu":{{"total":{},"busy":{}}},"io":{{"total":{},"busy":{}}}}},"latency_ms":{{"avg":{:.2},"p50":{},"p95":{},"p99":{},"samples":{}}},"throughput":{{"requests_per_second":{}}},"uptime_ms":{}}}"#,
+        // Requests
+        detailed_metrics.accepted,
+        detailed_metrics.handled,
+        detailed_metrics.errors,
+        
+        // Queues
+        qb.pending, qb.max_depth, qb.workers,
+        qc.pending, qc.max_depth, qc.workers,
+        qi.pending, qi.max_depth, qi.workers,
+        
+        // Workers (estimación: ocupados si hay trabajo pendiente)
+        qb.workers, if qb.pending > 0 { qb.workers } else { 0 },
+        qc.workers, if qc.pending > 0 { qc.workers } else { 0 },
+        qi.workers, if qi.pending > 0 { qi.workers } else { 0 },
+        
+        // Latencia real
+        detailed_metrics.avg_latency_ms,
+        detailed_metrics.p50_latency_ms,
+        detailed_metrics.p95_latency_ms,
+        detailed_metrics.p99_latency_ms,
+        detailed_metrics.sample_count,
+        
+        // Throughput
+        requests_per_second,
+        uptime_ms
+    );
+    
+    json_ok(body.into_bytes())
+}
+
 /// 404 por defecto
 pub fn not_found(_state: &Shared, req: &Request) -> (u16, &'static str, Vec<u8>) {
     not_found_json(&req.path)
@@ -413,6 +730,7 @@ mod tests {
             started_ms: now_ms_since_epoch(),
             metrics: Arc::new(Metrics::default()),
             pools, // <- campo nuevo obligatorio
+            job_store: Arc::new(crate::jobs::JobStore::new()),
         })
     }
 

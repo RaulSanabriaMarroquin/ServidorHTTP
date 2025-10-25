@@ -4,6 +4,10 @@
 //!   (state: &Shared, req: &Request) -> (status, content_type, body_bytes)
 
 use crate::core::{now_ms_since_epoch, Request, Shared};
+use num_bigint::{BigInt, BigUint, Sign};
+use num_traits::{Zero,One, Signed}; // (y los que ya uses: Zero, ToPrimitive, Signed, etc.)
+use sha2::{Sha256, Digest};
+
 
 fn json_ok(bytes: Vec<u8>) -> (u16, &'static str, Vec<u8>) {
     (200, "application/json", bytes)
@@ -28,7 +32,7 @@ pub fn isprime(_state: &Shared, req: &Request) -> (u16, &'static str, Vec<u8>) {
     if n_param.is_none() {
         return bad_request("Parameter 'n' is required");
     }
-    
+  
     let n = match n_param.unwrap().parse::<u64>() {
         Ok(val) => val,
         Err(_) => {
@@ -39,6 +43,7 @@ pub fn isprime(_state: &Shared, req: &Request) -> (u16, &'static str, Vec<u8>) {
     if n > 10_000_000 {
         return bad_request("Parameter 'n' must be <= 10,000,000 for performance reasons");
     }
+
     
     // Determinar método automáticamente o usar el especificado
     let (is_prime, method_used) = match method_param.as_str() {
@@ -105,35 +110,186 @@ pub fn factor(_state: &Shared, req: &Request) -> (u16, &'static str, Vec<u8>) {
     json_ok(body.into_bytes())
 }
 
+// Cálculo de π con Chudnovsky (iterativo)
+// - digits: número de dígitos decimales a devolver (capamos a 2000 por seguridad).
+// - max_iters: máximo de iteraciones de la serie (cada iter da ~14 dígitos nuevos).
+/// Cálculo de π con Chudnovsky + Binary Splitting, en puro Rust (num-bigint).
+/// Retorna una cadena con `digits` decimales (p.ej. digits=10 → "3.1415926535").
+fn calculate_pi_chudnovsky(digits: u32) -> String {
+    if digits == 0 {
+        return "3".to_string();
+    }
+
+    // Decimales extra para redondeo seguro en la división final
+    let extra: u32 = 10;
+    let prec: u32 = digits + extra;
+
+    // Número de términos necesarios (≈ 14.181647462 decimales por término)
+    let terms = ((prec as f64) / 14.181647462).ceil() as usize;
+
+    // Binary splitting: computa (P,Q,T) para k in [0, terms)
+    let (p, q, t) = bs_chudnovsky(0, terms);
+
+    // Necesitamos 426880 * sqrt(10005) * Q / T
+    // Escalamos sqrt para trabajar en enteros:
+    // sqrt_scaled ≈ sqrt(10005 * 10^(2*prec)) = isqrt(10005) * 10^prec
+    let ten = BigUint::from(10u32);
+    let scale = ten.pow(prec);
+    let sqrt_arg = BigUint::from(10005u32) * &scale * &scale;
+    let sqrt_scaled = isqrt(&sqrt_arg);
+
+    // 426880 * sqrt(10005) * Q
+    let k426880 = BigUint::from(426880u32);
+    let numer = k426880 * sqrt_scaled * q; // BigUint
+
+    // Dividir por T (T puede ser negativo; tomamos valor absoluto y ajustamos signo)
+    let t_abs = t.abs().to_biguint().unwrap();
+    let mut pi_scaled = &numer / &t_abs; // truncado
+
+    // Convertir a string y formatear con punto decimal
+    // pi_scaled ~ floor( 10^prec * pi )
+    let mut s = pi_scaled.to_string();
+    if s.len() <= prec as usize {
+        // anteponer ceros si hace falta
+        let mut z = String::from("0".repeat(prec as usize + 1 - s.len()));
+        z.push_str(&s);
+        s = z;
+    }
+    // Insertar punto después del primer dígito
+    let int_part = &s[..1];
+    let frac_part_full = &s[1..];
+
+    // Recortar a `digits` decimales (quitando los `extra`)
+    let wanted = digits as usize;
+    let frac_trimmed = if frac_part_full.len() >= wanted {
+        &frac_part_full[..wanted]
+    } else {
+        frac_part_full
+    };
+
+    format!("{int_part}.{frac_trimmed}")
+}
+
+/// Binary splitting para Chudnovsky.
+/// Devuelve (P,Q,T) como BigUint/BigInt para el rango [a,b).
+fn bs_chudnovsky(a: usize, b: usize) -> (BigUint, BigUint, BigInt) {
+    // Constantes de Chudnovsky
+    const A: i64 = 13_591_409;
+    const B: i64 = 545_140_134;
+    // (640320^3)/24 = 10_939_058_860_032_000  (cabe en u64)
+    const C3_24: u64 = 10_939_058_860_032_000;
+
+    if b - a == 1 {
+        // Caso base k = a
+        if a == 0 {
+            // P=Q=1, T=A
+            return (BigUint::one(), BigUint::one(), BigInt::from(A));
+        }
+
+        // P(a) = (6a-5)(2a-1)(6a-1)
+        let a_u = a as u64;
+        let p = BigUint::from(6 * a_u - 5)
+            * BigUint::from(2 * a_u - 1)
+            * BigUint::from(6 * a_u - 1);
+
+        // Q(a) = a^3 * C3_24
+        let q = BigUint::from(a_u.pow(3)) * BigUint::from(C3_24);
+
+        // T(a) = P(a) * (A + B a) * (-1)^a
+        let ab = A as i128 + (B as i128) * (a as i128);
+        // from_biguint necesita el enum Sign de num_bigint
+        let mut t = BigInt::from_biguint(Sign::Plus, p.clone()) * BigInt::from(ab);
+        if a % 2 == 1 {
+            t = -t;
+        }
+        (p, q, t)
+    } else {
+        let m = (a + b) / 2;
+        let (p1, q1, t1) = bs_chudnovsky(a, m);
+        let (p2, q2, t2) = bs_chudnovsky(m, b);
+
+        let p = &p1 * &p2;
+        let q = &q1 * &q2;
+
+        // t = t1*q2 + p1*t2  (con tipos BigInt/BigUint correctos)
+        let t = t1 * BigInt::from_biguint(Sign::Plus, q2.clone())
+            + BigInt::from_biguint(Sign::Plus, p1) * t2;
+
+        (p, q, t)
+    }
+}
+
+
+/// Entero sqrt: floor(sqrt(n)) para BigUint
+fn isqrt(n: &BigUint) -> BigUint {
+    if n.is_zero() {
+        return BigUint::zero();
+    }
+    // Aproximación inicial: 1 << ((bits+1)/2)
+    let mut x0 = BigUint::one() << ((n.bits() + 1) / 2);
+    loop {
+        let x1 = (&x0 + (n / &x0)) >> 1;
+        if x1 >= x0 {
+            return x0;
+        }
+        x0 = x1;
+    }
+}
+
+/// --- Helpers para PI (Machin) ---
+
+fn arctan_series(x: f64, terms: usize) -> f64 {
+    // Serie de Taylor: arctan(x) = Σ (-1)^k * x^(2k+1)/(2k+1)
+    let mut sum = 0.0f64;
+    let mut sign = 1.0f64;
+    let mut x_pow = x; // x^(2k+1) empieza en x^1
+    for k in 0..terms {
+        let denom = (2 * k + 1) as f64;
+        sum += sign * x_pow / denom;
+        sign = -sign;
+        // siguiente potencia: multiplicar por x^2
+        x_pow *= x * x;
+    }
+    sum
+}
+
+fn pi_with_machin(digits: u32) -> String {
+    //  Machin: pi = 16*arctan(1/5) - 4*arctan(1/239)
+    //  Elegimos #terms suficientemente grande para cubrir 'digits'
+    //  Regla empírica simple: terms = digits + 10
+    let terms = (digits as usize) + 10;
+    let a = arctan_series(1.0/5.0,   terms);
+    let b = arctan_series(1.0/239.0, terms);
+    let pi = 16.0*a - 4.0*b;
+
+    // Formatear con exactamente `digits` decimales
+    if digits == 0 {
+        return "3".to_string();
+    }
+    format!("{:.1$}", pi, digits as usize) // imprime 3.<digits>
+}
+
 /// GET /pi?digits=D
 pub fn pi(_state: &Shared, req: &Request) -> (u16, &'static str, Vec<u8>) {
     let start = now_ms_since_epoch();
-    
+
     let digits_param = req.query.get("digits");
     if digits_param.is_none() {
         return bad_request("Parameter 'digits' is required");
     }
-    
     let digits = match digits_param.unwrap().parse::<u32>() {
         Ok(val) => val,
-        Err(_) => {
-            return bad_request("Parameter 'digits' must be a valid positive integer");
-        }
+        Err(_) => return bad_request("Parameter 'digits' must be a valid positive integer"),
     };
-    
+
     if digits == 0 || digits > 1000 {
         return bad_request("Parameter 'digits' must be between 1 and 1000");
     }
-    
-    let pi_value = calculate_pi_spigot(digits);
+
+    let s = pi_with_machin(digits);
     let elapsed = now_ms_since_epoch() - start;
-    
-    let body = format!(
-        r#"{{"digits":{},"pi":"{}","method":"spigot","elapsed_ms":{}}}"#,
-        digits, pi_value, elapsed
-    );
-    
-    json_ok(body.into_bytes())
+    let body = format!(r#"{{"digits":{},"pi":"{}","method":"machin","elapsed_ms":{}}}"#, digits, s, elapsed);
+    (200, "application/json", body.into_bytes())
 }
 
 /// GET /mandelbrot?width=W&height=H&max_iter=I
@@ -185,42 +341,41 @@ pub fn mandelbrot(_state: &Shared, req: &Request) -> (u16, &'static str, Vec<u8>
 
 /// GET /matrixmul?size=N&seed=S
 pub fn matrixmul(_state: &Shared, req: &Request) -> (u16, &'static str, Vec<u8>) {
+    use sha2::{Sha256, Digest};
+    use hex::encode as hex_encode;
+
     let start = now_ms_since_epoch();
-    
+
     let size_param = req.query.get("size");
     let default_seed = "123".to_string();
     let seed_param = req.query.get("seed").unwrap_or(&default_seed);
-    
+
     if size_param.is_none() {
         return bad_request("Parameter 'size' is required");
     }
-    
+
     let size = match size_param.unwrap().parse::<usize>() {
         Ok(val) => val,
-        Err(_) => {
-            return bad_request("Parameter 'size' must be a valid positive integer");
-        }
+        Err(_) => return bad_request("Parameter 'size' must be a valid positive integer"),
     };
-    
+
     let seed = match seed_param.parse::<u64>() {
         Ok(val) => val,
-        Err(_) => {
-            return bad_request("Parameter 'seed' must be a valid integer");
-        }
+        Err(_) => return bad_request("Parameter 'seed' must be a valid integer"),
     };
-    
+
     if size == 0 || size > 1000 {
         return bad_request("Parameter 'size' must be between 1 and 1000");
     }
-    
-    let result_hash = multiply_matrices(size, seed);
+
+    // Multiplica y hashea con SHA-256 sobre los bytes de f64 (determinístico)
+    let result_hash = multiply_matrices_sha256(size, seed);
     let elapsed = now_ms_since_epoch() - start;
-    
+
     let body = format!(
         r#"{{"size":{},"seed":{},"result_sha256":"{}","elapsed_ms":{}}}"#,
         size, seed, result_hash, elapsed
     );
-    
     json_ok(body.into_bytes())
 }
 
@@ -359,37 +514,6 @@ fn factorize(n: u64) -> Vec<Vec<u64>> {
     factors
 }
 
-/// Calcula π usando el algoritmo de Spigot
-fn calculate_pi_spigot(digits: u32) -> String {
-    if digits == 0 {
-        return String::new();
-    }
-    
-    let len = (10 * digits / 3) as usize;
-    let mut a = vec![2u32; len];
-    let mut result = String::new();
-    
-    for _ in 0..digits {
-        let mut carry = 0;
-        
-        for i in (1..len).rev() {
-            let x = a[i] * 10 + carry;
-            a[i] = x % (2 * i as u32 + 1);
-            carry = x / (2 * i as u32 + 1);
-        }
-        
-        let digit = carry / 10;
-        result.push_str(&digit.to_string());
-        carry = carry % 10;
-        a[0] = carry;
-    }
-    
-    if result.len() > 1 {
-        result.insert(1, '.');
-    }
-    
-    result
-}
 
 /// Calcula el conjunto de Mandelbrot
 fn calculate_mandelbrot(width: u32, height: u32, max_iter: u32) -> Vec<Vec<u32>> {
@@ -418,42 +542,40 @@ fn calculate_mandelbrot(width: u32, height: u32, max_iter: u32) -> Vec<Vec<u32>>
     result
 }
 
-/// Multiplica dos matrices y retorna el hash SHA-256 del resultado
-fn multiply_matrices(size: usize, seed: u64) -> String {
-    use std::collections::hash_map::DefaultHasher;
-    use std::hash::{Hash, Hasher};
-    
-    // Generar matrices pseudoaleatorias
-    let mut matrix_a = vec![vec![0.0; size]; size];
-    let mut matrix_b = vec![vec![0.0; size]; size];
-    
+/// Multiplica dos matrices N x N determinísticas y devuelve SHA-256 (hex)
+fn multiply_matrices_sha256(size: usize, seed: u64) -> String {
+    // Generar matrices determinísticas (como ya hacías)
+    let mut a = vec![vec![0.0; size]; size];
+    let mut b = vec![vec![0.0; size]; size];
     for i in 0..size {
         for j in 0..size {
-            matrix_a[i][j] = pseudo_random(seed + (i * size + j) as u64);
-            matrix_b[i][j] = pseudo_random(seed + (i * size + j) as u64 + 1000);
+            a[i][j] = pseudo_random(seed + (i * size + j) as u64);
+            b[i][j] = pseudo_random(seed + (i * size + j) as u64 + 1000);
         }
     }
-    
-    // Multiplicar matrices
-    let mut result = vec![vec![0.0; size]; size];
+
+    let mut c = vec![vec![0.0; size]; size];
     for i in 0..size {
         for j in 0..size {
+            let mut acc = 0.0;
             for k in 0..size {
-                result[i][j] += matrix_a[i][k] * matrix_b[k][j];
+                acc += a[i][k] * b[k][j];
             }
+            c[i][j] = acc;
         }
     }
-    
-    // Calcular hash del resultado
-    let mut hasher = DefaultHasher::new();
-    for row in &result {
-        for &val in row {
-            (val as u64).hash(&mut hasher);
+
+    // SHA-256 del resultado (en binario) y devolver hex (64 chars)
+    let mut hasher = Sha256::new();
+    for row in &c {
+        for &v in row {
+            hasher.update(v.to_le_bytes());
         }
     }
-    
-    format!("{:x}", hasher.finish())
+    let digest = hasher.finalize();
+    hex::encode(digest)
 }
+
 
 /// Generador pseudoaleatorio simple
 fn pseudo_random(seed: u64) -> f64 {
@@ -669,6 +791,75 @@ mod tests {
         assert_eq!(code, 400);
     }
 
+    // --------- PI (requiere el método "machin" que te pasé) ---------
+
+    #[test]
+    fn pi_digits_1_ok() {
+        let state = fake_state();
+        let req = req_from("/pi?digits=1");
+        let (code, _ctype, body) = super::pi(&state, &req);
+        assert_eq!(code, 200);
+        let s = std::str::from_utf8(&body).unwrap();
+        assert!(s.contains("\"digits\":1"));
+        assert!(s.contains("\"method\":\"machin\""));
+        assert!(s.contains("\"pi\":\"3.")); // 3.x
+    }
+
+    #[test]
+    fn pi_digits_20_ok() {
+        let state = fake_state();
+        let req = req_from("/pi?digits=20");
+        let (code, _ctype, body) = super::pi(&state, &req);
+        assert_eq!(code, 200);
+        let s = std::str::from_utf8(&body).unwrap();
+        assert!(s.contains("\"digits\":20"));
+        assert!(s.contains("\"method\":\"machin\""));
+        // formato "3.<20 dígitos>"
+        let start = s.find("\"pi\":\"").unwrap() + 6;
+        let end = s[start..].find('"').unwrap() + start;
+        let pi_str = &s[start..end];
+        assert!(pi_str.starts_with("3."));
+        assert_eq!(pi_str.len(), 1 + 1 + 20); // "3." + 20
+    }
+
+    #[test]
+    fn pi_invalid_zero_and_too_large() {
+        let state = fake_state();
+        let req0 = req_from("/pi?digits=0");
+        let (code0, _, _) = super::pi(&state, &req0);
+        assert_eq!(code0, 400);
+
+        let req_big = req_from("/pi?digits=2001");
+        let (code_big, _, _) = super::pi(&state, &req_big);
+        assert_eq!(code_big, 400);
+    }
+
+    // --------- MATRIXMUL ---------
+
+    #[test]
+    fn matrixmul_size_edges_ok() {
+        // size=1 OK
+        let state = fake_state();
+        let req1 = req_from("/matrixmul?size=1&seed=123");
+        let (code1, _ctype1, body1) = super::matrixmul(&state, &req1);
+        assert_eq!(code1, 200);
+        assert!(std::str::from_utf8(&body1).unwrap().contains("\"result_sha256\""));
+
+        // size=1000 OK (si tu handler permite <=1000)
+        let req2 = req_from("/matrixmul?size=1000&seed=321");
+        let (code2, _ctype2, _body2) = super::matrixmul(&state, &req2);
+        assert_eq!(code2, 200);
+    }
+
+    #[test]
+    fn matrixmul_too_large_is_400() {
+        let state = fake_state();
+        let req = req_from("/matrixmul?size=1001&seed=1");
+        let (code, _ctype, _body) = super::matrixmul(&state, &req);
+        assert_eq!(code, 400);
+    }
+
+
     #[test]
     fn test_matrixmul_invalid_size() {
         let state = fake_state();
@@ -713,7 +904,7 @@ mod tests {
 
     #[test]
     fn test_calculate_pi_spigot() {
-        let pi = calculate_pi_spigot(5);
+        let pi = calculate_pi_chudnovsky(5);
         assert!(pi.starts_with("3.141"));
     }
 
@@ -726,9 +917,9 @@ mod tests {
 
     #[test]
     fn test_multiply_matrices() {
-        let hash = multiply_matrices(3, 123);
-        assert!(!hash.is_empty());
-        assert_eq!(hash.len(), 16); // SHA-256 hex length
+    let hash = multiply_matrices_sha256(3, 123);
+    assert!(!hash.is_empty());
+    assert_eq!(hash.len(), 64); // SHA-256 hex length
     }
 
     #[test]

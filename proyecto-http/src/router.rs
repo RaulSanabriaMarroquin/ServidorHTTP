@@ -25,14 +25,14 @@ impl Router {
             "/help"       => Route::Basic(basic::help),
             "/random"     => Route::Basic(basic::random),
             "/hash"       => Route::Basic(basic::hash),
-            "/simulate"   => Route::Basic(basic::simulate),
-            "/loadtest"   => Route::Basic(basic::loadtest),
+            //"/simulate"   => Route::Basic(basic::simulate),
+            //"/loadtest"   => Route::Basic(basic::loadtest),
             "/createfile" => Route::Basic(basic::createfile),
             "/deletefile" => Route::Basic(basic::deletefile),
+            "/fibonacci"  => Route::Cpu(basic::fibonacci),
 
             // CPU-bound → pool "cpu"
-            "/isprime"    => Route::Cpu(basic::isprime),
-            "/fibonacci"  => Route::Cpu(basic::fibonacci),
+            "/isprime"    => Route::Cpu(cpu::isprime),
             "/factor"     => Route::Cpu(cpu::factor),
             "/pi"         => Route::Cpu(cpu::pi),
             "/mandelbrot" => Route::Cpu(cpu::mandelbrot),

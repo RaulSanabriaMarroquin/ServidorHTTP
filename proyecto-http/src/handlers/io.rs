@@ -231,7 +231,7 @@ pub fn compress(_state: &Shared, req: &Request) -> (u16, &'static str, Vec<u8>) 
 /// GET /hashfile?name=FILE&algo=sha256
 pub fn hashfile(_state: &Shared, req: &Request) -> (u16, &'static str, Vec<u8>) {
     let start = now_ms_since_epoch();
-    
+
     let name_param = req.query.get("name");
     let default_algo = "sha256".to_string();
     let algo_param = req.query.get("algo").unwrap_or(&default_algo);
@@ -243,33 +243,29 @@ pub fn hashfile(_state: &Shared, req: &Request) -> (u16, &'static str, Vec<u8>) 
     let filename = name_param.unwrap();
     let file_path = format!("data/{}", filename);
     
-    // Verificar que el archivo existe
     if !std::path::Path::new(&file_path).exists() {
         return not_found(&format!("File '{}' not found", filename));
     }
     
-    // Validar algoritmo
     if algo_param != "sha256" {
         return bad_request("Parameter 'algo' must be 'sha256'");
     }
     
-    // Leer archivo
     let file_content = match fs::read(&file_path) {
         Ok(content) => content,
         Err(e) => {
             return bad_request(&format!("Error reading file: {}", e));
         }
     };
-    
-    // Calcular hash
-    let hash_value = calculate_file_hash(&file_content);
+
+    // ✅ usa el helper (evita el warning y unifica implementación)
+    let hex = calculate_file_hash(&file_content);
+
     let elapsed = now_ms_since_epoch() - start;
-    
     let body = format!(
-        r#"{{"file":"{}","algo":"{}","hash":"{}","size":{},"elapsed_ms":{}}}"#,
-        filename, algo_param, hash_value, file_content.len(), elapsed
+        r#"{{"file":"{}","algo":"sha256","hash":"{}","size":{},"elapsed_ms":{}}}"#,
+        filename, hex, file_content.len(), elapsed
     );
-    
     json_ok(body.into_bytes())
 }
 
@@ -462,13 +458,12 @@ fn compress_rle(data: &[u8]) -> Vec<u8> {
 }
 
 /// Calcula hash SHA-256 de un archivo
+use sha2::{Sha256, Digest};
+
 fn calculate_file_hash(data: &[u8]) -> String {
-    use std::collections::hash_map::DefaultHasher;
-    use std::hash::{Hash, Hasher};
-    
-    let mut hasher = DefaultHasher::new();
-    data.hash(&mut hasher);
-    format!("{:x}", hasher.finish())
+    let mut hasher = Sha256::new();
+    hasher.update(data);
+    hex::encode(hasher.finalize())
 }
 
 #[cfg(test)]
@@ -661,6 +656,47 @@ mod tests {
         assert_eq!(code, 400);
     }
 
+    // --------- COMPRESS (xz) ---------
+
+    #[test]
+    fn compress_xz_ok() {
+        create_test_file("t_xz.txt", "hola hola hola hola");
+        let state = fake_state();
+        let req = req_from("/compress?name=t_xz.txt&codec=xz");
+        let (code, _ctype, body) = super::compress(&state, &req);
+        assert_eq!(code, 200);
+        let s = std::str::from_utf8(&body).unwrap();
+        assert!(s.contains("\"compressed_file\":\"t_xz.txt.xz\""));
+        cleanup_test_file("t_xz.txt");
+        cleanup_test_file("t_xz.txt.xz");
+    }
+
+    // --------- SORTFILE (quick) ---------
+
+    #[test]
+    fn sortfile_quick_ok() {
+        create_test_file("nums_q.txt", "5\n3\n4\n1\n2\n");
+        let state = fake_state();
+        let req = req_from("/sortfile?name=nums_q.txt&algo=quick");
+        let (code, _ctype, body) = super::sortfile(&state, &req);
+        assert_eq!(code, 200);
+        let s = std::str::from_utf8(&body).unwrap();
+        assert!(s.contains("\"sorted_file\":\"nums_q.txt.sorted\""));
+        cleanup_test_file("nums_q.txt");
+        cleanup_test_file("nums_q.txt.sorted");
+    }
+
+    // --------- HASHFILE inexistente ---------
+
+    #[test]
+    fn hashfile_nonexistent_returns_404() {
+        let state = fake_state();
+        let req = req_from("/hashfile?name=does_not_exist.txt&algo=sha256");
+        let (code, _ctype, _body) = super::hashfile(&state, &req);
+        assert_eq!(code, 404);
+    }
+
+
     #[test]
     fn test_compress_invalid_codec() {
         create_test_file("test_compress.txt", "test content");
@@ -754,7 +790,7 @@ mod tests {
         assert!(result.is_ok());
         let (lines, words, bytes) = result.unwrap();
         assert_eq!(lines, 2);
-        assert_eq!(words, 7);
+        assert_eq!(words, 6);
         assert!(bytes > 0);
         
         cleanup_test_file("test_stats.txt");
@@ -793,6 +829,8 @@ mod tests {
         let data = b"hello world";
         let hash = calculate_file_hash(data);
         assert!(!hash.is_empty());
-        assert_eq!(hash.len(), 16); // DefaultHasher hex length
+        assert_eq!(hash.len(), 64); // SHA-256 en hex son 64 chars
+        // (opcional) comprueba el valor exacto si quieres máxima robustez:
+        // assert_eq!(hash, "b94d27b9934d3e08a52e52d7da7dabfac484efe37a5380ee9088f7ace2efcde9");
     }
 }

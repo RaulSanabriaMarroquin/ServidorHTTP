@@ -147,31 +147,22 @@ pub fn random(_state: &Shared, req: &Request) -> (u16, &'static str, Vec<u8>) {
 }
 
 /// GET /hash?text=someinput
-pub fn hash(_state: &Shared, req: &Request) -> (u16, &'static str, Vec<u8>) {
-    let default_text = "hello world".to_string();
-    let text_param = req.query.get("text").unwrap_or(&default_text);
-    
-    if text_param.is_empty() {
-        return bad_request("Parameter 'text' cannot be empty");
-    }
-    
-    // Calcular hash simple
-    use std::collections::hash_map::DefaultHasher;
-    use std::hash::{Hash, Hasher};
-    
-    let mut hasher = DefaultHasher::new();
-    text_param.hash(&mut hasher);
-    let hash_value = hasher.finish();
-    
-    let body = format!(
-        r#"{{"text":"{}","hash":"{:x}"}}"#,
-        text_param, hash_value
-    );
-    
-    json_ok(body.into_bytes())
+pub fn hash(_state:&Shared, req:&Request)->(u16,&'static str,Vec<u8>){
+    use sha2::{Sha256, Digest};
+    use hex::encode as hex_encode;
+
+    let text = req.query.get("text").cloned().unwrap_or_else(|| "hello world".to_string());
+    if text.is_empty() { return bad_request("Parameter 'text' cannot be empty"); }
+
+    let mut hasher = Sha256::new();
+    hasher.update(text.as_bytes());
+    let out_hex = hex_encode(hasher.finalize());
+
+    json_ok(format!(r#"{{"text":"{}","algo":"sha256","hash":"{}"}}"#, text, out_hex).into_bytes())
 }
 
-/// GET /simulate?seconds=s&task=name
+
+/*// GET /simulate?seconds=s&task=name
 pub fn simulate(_state: &Shared, req: &Request) -> (u16, &'static str, Vec<u8>) {
     let default_seconds = "2".to_string();
     let default_task = "cpu_intensive".to_string();
@@ -220,7 +211,7 @@ pub fn simulate(_state: &Shared, req: &Request) -> (u16, &'static str, Vec<u8>) 
     }
 }
 
-/// GET /loadtest?tasks=n&sleep=x
+GET /loadtest?tasks=n&sleep=x
 pub fn loadtest(_state: &Shared, req: &Request) -> (u16, &'static str, Vec<u8>) {
     let default_tasks = "10".to_string();
     let default_sleep = "100".to_string();
@@ -267,6 +258,7 @@ pub fn loadtest(_state: &Shared, req: &Request) -> (u16, &'static str, Vec<u8>) 
     
     json_ok(body.into_bytes())
 }
+ */
 
 /// GET /createfile?name=filename&content=text&repeat=x
 pub fn createfile(_state: &Shared, req: &Request) -> (u16, &'static str, Vec<u8>) {
@@ -294,6 +286,7 @@ pub fn createfile(_state: &Shared, req: &Request) -> (u16, &'static str, Vec<u8>
     if repeat == 0 || repeat > 1000 {
         return bad_request("Parameter 'repeat' must be between 1 and 1000");
     }
+
     
     // Crear directorio data si no existe
     std::fs::create_dir_all("data").unwrap_or_default();
@@ -307,6 +300,13 @@ pub fn createfile(_state: &Shared, req: &Request) -> (u16, &'static str, Vec<u8>
     
     // Escribir archivo
     let file_path = format!("data/{}", filename);
+
+
+    if std::path::Path::new(&file_path).exists() {
+    return (409, "application/json",
+        format!(r#"{{"error":"conflict","message":"File exists","filename":"{}"}}"#, filename).into_bytes());
+    }
+
     match std::fs::write(&file_path, file_content) {
         Ok(_) => {
             let file_size = std::fs::metadata(&file_path)
@@ -331,37 +331,51 @@ pub fn createfile(_state: &Shared, req: &Request) -> (u16, &'static str, Vec<u8>
 
 /// GET /deletefile?name=filename
 pub fn deletefile(_state: &Shared, req: &Request) -> (u16, &'static str, Vec<u8>) {
-    let name_param = req.query.get("name");
-    
-    if name_param.is_none() {
-        return bad_request("Parameter 'name' is required");
+    let name_param = match req.query.get("name") {
+        Some(n) => n,
+        None => return bad_request("Parameter 'name' is required"),
+    };
+
+    if !validate_filename(name_param) {
+        return bad_request("Invalid 'name': must be a plain filename (no path separators or '..').");
     }
-    
-    let filename = name_param.unwrap();
-    
-    if filename.is_empty() {
-        return bad_request("Parameter 'name' cannot be empty");
+
+    let file_path = format!("data/{}", name_param);
+
+    // Si no existe → 404
+    if !std::path::Path::new(&file_path).exists() {
+        return (
+            404,
+            "application/json",
+            format!(r#"{{"error":"not_found","message":"File not found","filename":"{}","file_path":"{}"}}"#,
+                    name_param, file_path).into_bytes(),
+        );
     }
-    
-    // Intentar eliminar archivo
-    let file_path = format!("data/{}", filename);
+
     match std::fs::remove_file(&file_path) {
         Ok(_) => {
             let body = format!(
-                r#"{{"filename":"{}","file_path":"{}","message":"File deleted successfully"}}"#,
-                filename, file_path
+                r#"{{"filename":"{}","file_path":"{}","message":"File deleted successfully"}} "#,
+                name_param, file_path
             );
             json_ok(body.into_bytes())
-        },
+        }
         Err(e) => {
-            let body = format!(
-                r#"{{"error":"file_error","message":"Failed to delete file: {}","filename":"{}","file_path":"{}"}}"#,
-                e, filename, file_path
-            );
-            bad_request(&body)
+            // Si por permisos o bloqueo falla → 500
+            (
+                500,
+                "application/json",
+                format!(r#"{{"error":"file_error","message":"Failed to delete file: {}","filename":"{}","file_path":"{}"}}"#,
+                        e, name_param, file_path).into_bytes(),
+            )
         }
     }
+
 }
+fn validate_filename(name: &str) -> bool {
+    // Validar que el nombre no contenga separadores de ruta ni secuencias ".."
+    !name.contains('/') && !name.contains('\\') && !name.contains("..") && !name.is_empty()
+}   
 
 /// GET /metrics
 pub fn metrics(state: &Shared, _req: &Request) -> (u16, &'static str, Vec<u8>) {
@@ -441,7 +455,7 @@ pub fn fibonacci_calc(n: u32) -> Option<u64> {
 
 /// GET /fibonacci?n=NUM
 pub fn fibonacci(_state: &Shared, req: &Request) -> (u16, &'static str, Vec<u8>) {
-    let n_str = req.query.get("n").map(String::as_str).unwrap_or("10");
+    let n_str = req.query.get("num").or_else(|| req.query.get("n")).map(String::as_str).unwrap_or("10");
     let n = match n_str.parse::<u32>() {
         Ok(v) => v,
         Err(_) => return bad_request("invalid_param: n must be u32"),
@@ -505,10 +519,11 @@ pub fn isprime(_state: &Shared, req: &Request) -> (u16, &'static str, Vec<u8>) {
 
 /// GET /sleep?ms=X   (límite 5000ms)
 pub fn sleep(_state: &Shared, req: &Request) -> (u16, &'static str, Vec<u8>) {
-    let ms_str = req.query.get("ms").map(String::as_str).unwrap_or("1000");
-    let ms = match ms_str.parse::<u64>() {
-        Ok(v) => v,
-        Err(_) => return bad_request("invalid_param: ms must be u64"),
+    let seconds = req.query.get("seconds").and_then(|s| s.parse::<u64>().ok());
+    let ms = match (seconds, req.query.get("ms")) {
+    (Some(s), _) => s.saturating_mul(1000),
+    (None, Some(ms_str)) => ms_str.parse::<u64>().unwrap_or(1000),
+    _ => 1000
     };
     if ms > 5000 {
         return bad_request("ms too large (max 5000)");
@@ -564,6 +579,69 @@ pub fn help(_state: &Shared, _req: &Request) -> (u16, &'static str, Vec<u8>) {
       "description": "This help message",
       "example": "/help"
     }
+    "/random": {
+    "description":"Generate random integers",
+    "parameters":{"count":"1..1000","min":"int","max":"int"}
+    },
+    "/hash":   {
+    "description":"SHA-256 of input text",
+    "parameters":{"text":"string"}
+    },
+    "/simulate":{
+    "description":"Toy workload",
+    "parameters":{"seconds":"1..10",
+    "task":"cpu_intensive|io_intensive"}
+    },
+    "/loadtest":{
+    "description":"Run N sleep tasks",
+    "parameters":{"tasks":"1..100","sleep":"ms"}
+    },
+    "/createfile":{
+    "description":"Create file with repeated content",
+    "parameters":{"name":"filename","content":"text","repeat":"1..1000"}
+    },
+    "/deletefile":{
+    "description":"Delete file",
+    "parameters":{"name":"filename"}
+    },
+    "/isprime":{
+    "description":"Primality test",
+    "parameters":{"n":"u64","method":"division|miller-rabin|auto"}
+    },
+    "/factor":{
+    "description":"Prime factorization",
+    "parameters":{"n":"u64<=1e6"}
+    },
+    "/pi":{
+    "description":"Pi digits (spigot)",
+    "parameters":{"digits":"1..1000"}
+    },
+    "/mandelbrot":{
+    "description":"Mandelbrot iterations matrix",
+    "parameters":{"width":"1..1000","height":"1..1000","max_iter":"1..10000"}
+    },
+    "/matrixmul":{
+    "description":"Matrix multiply N x N, returns SHA-256",
+    "parameters":{"size":"1..1000","seed":"u64"}
+    },
+    "/sortfile":{"description":"Sort integers file",
+    "parameters":{"name":"file","algo":"merge|quick"}
+    },
+    "/wordcount":{
+    "description":"Count lines, words, bytes",
+    "parameters":{"name":"file"}
+    },
+    "/grep":{
+    "description":"Count matches + first 10 lines",
+    "parameters":{"name":"file","pattern":"string"}
+    },
+    "/compress":{
+    "description":"Compress file",
+    "parameters":{"name":"file","codec":"gzip|xz"}
+    },
+    "/hashfile":{
+    "description":"SHA-256 of file",
+    "parameters":{"name":"file","algo":"sha256"}}
   }
 }"#;
     json_ok(body.as_bytes().to_vec())
@@ -876,6 +954,61 @@ mod tests {
         let s = std::str::from_utf8(&body).unwrap();
         assert!(s.contains("\"not_found\""));
         assert!(s.contains("/noexiste"));
+    }
+
+    #[test]
+    fn random_invalid_count_zero() {
+        let state = fake_state();
+        let req = req_from("/random?count=0&min=1&max=10");
+        let (code, _ctype, _body) = super::random(&state, &req);
+        assert_eq!(code, 400);
+    }
+
+    #[test]
+    fn random_min_ge_max() {
+        let state = fake_state();
+        let req = req_from("/random?count=5&min=10&max=10");
+        let (code, _ctype, _body) = super::random(&state, &req);
+        assert_eq!(code, 400);
+    }
+
+    #[test]
+    fn random_large_count_ok() {
+        let state = fake_state();
+        let req = req_from("/random?count=1000&min=1&max=100");
+        let (code, _ctype, body) = super::random(&state, &req);
+        assert_eq!(code, 200);
+        let s = std::str::from_utf8(&body).unwrap();
+        assert!(s.contains("\"count\":1000"));
+        assert!(s.contains("\"numbers\""));
+    }
+
+    // --------- DELETEFILE ---------
+
+    #[test]
+    fn deletefile_not_found_returns_404() {
+        let state = fake_state();
+        let req = req_from("/deletefile?name=__no_exist__.txt");
+        let (code, _ctype, _body) = super::deletefile(&state, &req);
+        assert_eq!(code, 404);
+    }
+
+    #[test]
+    fn deletefile_invalid_traversal_returns_400() {
+        // Requiere que hayas agregado validación para rechazar '..' o separadores.
+        let state = fake_state();
+        let req = req_from("/deletefile?name=../evil.txt");
+        let (code, _ctype, _body) = super::deletefile(&state, &req);
+        assert_eq!(code, 400);
+    }
+
+    #[test]
+    fn deletefile_invalid_subdir_returns_400() {
+        // Si decides permitir sólo archivos en data/ (sin subdirectorios), este test valida eso.
+        let state = fake_state();
+        let req = req_from("/deletefile?name=sub/nums.txt");
+        let (code, _ctype, _body) = super::deletefile(&state, &req);
+        assert_eq!(code, 400);
     }
 
     #[test]

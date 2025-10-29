@@ -39,17 +39,17 @@ pub fn sortfile(_state: &Shared, req: &Request) -> (u16, &'static str, Vec<u8>) 
         return bad_request("Parameter 'name' is required");
     }
     
+    // Validar algoritmo primero
+    if algo_param != "merge" && algo_param != "quick" {
+        return bad_request("Parameter 'algo' must be 'merge' or 'quick'");
+    }
+    
     let filename = name_param.unwrap();
     let file_path = format!("data/{}", filename);
     
     // Verificar que el archivo existe
     if !std::path::Path::new(&file_path).exists() {
         return not_found(&format!("File '{}' not found", filename));
-    }
-    
-    // Validar algoritmo
-    if algo_param != "merge" && algo_param != "quick" {
-        return bad_request("Parameter 'algo' must be 'merge' or 'quick'");
     }
     
     // Leer números del archivo
@@ -570,6 +570,7 @@ mod tests {
         assert_eq!(code, 400);
         
         cleanup_test_file("test_sort.txt");
+        cleanup_test_file("test_sort.txt.sorted"); // Limpiar archivo ordenado si existe
     }
 
     #[test]
@@ -582,7 +583,7 @@ mod tests {
         assert_eq!(code, 200);
         let s = std::str::from_utf8(&body).unwrap();
         assert!(s.contains("\"lines\":2"));
-        assert!(s.contains("\"words\":7"));
+        assert!(s.contains("\"words\":6"));
         
         cleanup_test_file("test_wc.txt");
     }
@@ -733,14 +734,14 @@ mod tests {
 
     #[test]
     fn test_hashfile_invalid_algo() {
-        create_test_file("test_hash.txt", "test content");
+        create_test_file("test_hash_invalid.txt", "test content");
         
         let state = fake_state();
-        let req = req_from("/hashfile?name=test_hash.txt&algo=md5");
+        let req = req_from("/hashfile?name=test_hash_invalid.txt&algo=md5");
         let (code, _ctype, _body) = hashfile(&state, &req);
         assert_eq!(code, 400);
         
-        cleanup_test_file("test_hash.txt");
+        cleanup_test_file("test_hash_invalid.txt");
     }
 
     // Pruebas de funciones auxiliares

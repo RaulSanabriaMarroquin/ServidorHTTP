@@ -4,6 +4,7 @@
 //!   (state: &Shared, req: &Request) -> (status, content_type, body_bytes)
 
 use crate::core::{now_ms_since_epoch, Request, Shared};
+use crate::handlers::jobs::maybe_enqueue_job; // doble modo
 use std::fs;
 use std::io::{BufRead, BufReader, Write};
 
@@ -27,87 +28,98 @@ fn not_found(msg: &str) -> (u16, &'static str, Vec<u8>) {
     )
 }
 
-/// GET /sortfile?name=FILE&algo=merge|quick
-pub fn sortfile(_state: &Shared, req: &Request) -> (u16, &'static str, Vec<u8>) {
+/// GET /sortfile?name=FILE&algo=merge|quick[&mode=job&prio=...]
+pub fn sortfile(state: &Shared, req: &Request) -> (u16, &'static str, Vec<u8>) {
+    // Doble modo: si ?mode=job, encola con task="sortfile"
+    if let Some(resp) = maybe_enqueue_job(state, req, "sortfile", &["name", "algo"]) {
+        return resp;
+    }
+
     let start = now_ms_since_epoch();
-    
+
     let name_param = req.query.get("name");
     let default_algo = "merge".to_string();
-    let algo_param = req.query.get("algo").unwrap_or(&default_algo);
-    
+    let algo_raw = req.query.get("algo").unwrap_or(&default_algo);
+
     if name_param.is_none() {
         return bad_request("Parameter 'name' is required");
     }
-    
-    // Validar algoritmo primero
-    if algo_param != "merge" && algo_param != "quick" {
-        return bad_request("Parameter 'algo' must be 'merge' or 'quick'");
-    }
-    
     let filename = name_param.unwrap();
+
+    // Asegura carpeta
+    let _ = std::fs::create_dir_all("data");
+
+    // Resuelve paths
     let file_path = format!("data/{}", filename);
-    
-    // Verificar que el archivo existe
+
+    // Chequea existencia
     if !std::path::Path::new(&file_path).exists() {
         return not_found(&format!("File '{}' not found", filename));
     }
-    
-    // Leer números del archivo
+
+    // Normaliza algoritmo
+    let algo = algo_raw.to_ascii_lowercase();
+    if algo != "merge" && algo != "quick" {
+        return bad_request("Parameter 'algo' must be 'merge' or 'quick'");
+    }
+
+    // Leer números (tolerante a CRLF/espacios/comas)
     let numbers = match read_numbers_from_file(&file_path) {
         Ok(nums) => nums,
-        Err(e) => {
-            return bad_request(&format!("Error reading file: {}", e));
-        }
+        Err(e) => return bad_request(&format!("Error reading file: {}", e)),
     };
-    
     if numbers.is_empty() {
         return bad_request("File is empty or contains no valid numbers");
     }
-    
-    // Ordenar números
+
+    // Ordenar
     let mut sorted_numbers = numbers.clone();
-    match algo_param.as_str() {
+    match algo.as_str() {
         "merge" => merge_sort(&mut sorted_numbers),
         "quick" => quick_sort(&mut sorted_numbers),
         _ => unreachable!(),
     }
-    
-    // Escribir archivo ordenado
+
+    // Escribir archivo resultante
     let sorted_filename = format!("{}.sorted", filename);
     let sorted_path = format!("data/{}", sorted_filename);
-    
-    match write_numbers_to_file(&sorted_path, &sorted_numbers) {
-        Ok(_) => {
-            let elapsed = now_ms_since_epoch() - start;
-            let body = format!(
-                r#"{{"file":"{}","algo":"{}","sorted_file":"{}","count":{},"elapsed_ms":{}}}"#,
-                filename, algo_param, sorted_filename, sorted_numbers.len(), elapsed
-            );
-            json_ok(body.into_bytes())
-        },
-        Err(e) => {
-            bad_request(&format!("Error writing sorted file: {}", e))
-        }
+    if let Err(e) = write_numbers_to_file(&sorted_path, &sorted_numbers) {
+        return bad_request(&format!("Error writing sorted file: {}", e));
     }
+
+    let elapsed = now_ms_since_epoch() - start;
+    let body = format!(
+        r#"{{"file":"{}","algo":"{}","sorted_file":"{}","count":{},"elapsed_ms":{}}}"#,
+        filename,
+        algo,
+        sorted_filename,
+        sorted_numbers.len(),
+        elapsed
+    );
+    json_ok(body.into_bytes())
 }
 
-/// GET /wordcount?name=FILE
-pub fn wordcount(_state: &Shared, req: &Request) -> (u16, &'static str, Vec<u8>) {
+/// GET /wordcount?name=FILE[&mode=job]
+pub fn wordcount(state: &Shared, req: &Request) -> (u16, &'static str, Vec<u8>) {
+    if let Some(resp) = maybe_enqueue_job(state, req, "wordcount", &["name"]) {
+        return resp;
+    }
+
     let start = now_ms_since_epoch();
-    
+
     let name_param = req.query.get("name");
     if name_param.is_none() {
         return bad_request("Parameter 'name' is required");
     }
-    
+
     let filename = name_param.unwrap();
     let file_path = format!("data/{}", filename);
-    
+
     // Verificar que el archivo existe
     if !std::path::Path::new(&file_path).exists() {
         return not_found(&format!("File '{}' not found", filename));
     }
-    
+
     // Contar líneas, palabras y bytes
     let (lines, words, bytes) = match count_file_stats(&file_path) {
         Ok(stats) => stats,
@@ -115,36 +127,40 @@ pub fn wordcount(_state: &Shared, req: &Request) -> (u16, &'static str, Vec<u8>)
             return bad_request(&format!("Error reading file: {}", e));
         }
     };
-    
+
     let elapsed = now_ms_since_epoch() - start;
     let body = format!(
         r#"{{"file":"{}","lines":{},"words":{},"bytes":{},"elapsed_ms":{}}}"#,
         filename, lines, words, bytes, elapsed
     );
-    
+
     json_ok(body.into_bytes())
 }
 
-/// GET /grep?name=FILE&pattern=REGEX
-pub fn grep(_state: &Shared, req: &Request) -> (u16, &'static str, Vec<u8>) {
+/// GET /grep?name=FILE&pattern=REGEX[&mode=job]
+pub fn grep(state: &Shared, req: &Request) -> (u16, &'static str, Vec<u8>) {
+    if let Some(resp) = maybe_enqueue_job(state, req, "grep", &["name", "pattern"]) {
+        return resp;
+    }
+
     let start = now_ms_since_epoch();
-    
+
     let name_param = req.query.get("name");
     let pattern_param = req.query.get("pattern");
-    
+
     if name_param.is_none() || pattern_param.is_none() {
         return bad_request("Parameters 'name' and 'pattern' are required");
     }
-    
+
     let filename = name_param.unwrap();
     let pattern = pattern_param.unwrap();
     let file_path = format!("data/{}", filename);
-    
+
     // Verificar que el archivo existe
     if !std::path::Path::new(&file_path).exists() {
         return not_found(&format!("File '{}' not found", filename));
     }
-    
+
     // Buscar patrones en el archivo
     let (matches, matching_lines) = match search_in_file(&file_path, pattern) {
         Ok(result) => result,
@@ -152,42 +168,47 @@ pub fn grep(_state: &Shared, req: &Request) -> (u16, &'static str, Vec<u8>) {
             return bad_request(&format!("Error searching in file: {}", e));
         }
     };
-    
+
     let elapsed = now_ms_since_epoch() - start;
-    let matching_lines_json = serde_json::to_string(&matching_lines).unwrap_or_else(|_| "[]".to_string());
+    let matching_lines_json =
+        serde_json::to_string(&matching_lines).unwrap_or_else(|_| "[]".to_string());
     let body = format!(
         r#"{{"file":"{}","pattern":"{}","matches":{},"matching_lines":{},"elapsed_ms":{}}}"#,
         filename, pattern, matches, matching_lines_json, elapsed
     );
-    
+
     json_ok(body.into_bytes())
 }
 
-/// GET /compress?name=FILE&codec=gzip|xz
-pub fn compress(_state: &Shared, req: &Request) -> (u16, &'static str, Vec<u8>) {
+/// GET /compress?name=FILE&codec=gzip|xz[&mode=job]
+pub fn compress(state: &Shared, req: &Request) -> (u16, &'static str, Vec<u8>) {
+    if let Some(resp) = maybe_enqueue_job(state, req, "compress", &["name", "codec"]) {
+        return resp;
+    }
+
     let start = now_ms_since_epoch();
-    
+
     let name_param = req.query.get("name");
     let default_codec = "gzip".to_string();
     let codec_param = req.query.get("codec").unwrap_or(&default_codec);
-    
+
     if name_param.is_none() {
         return bad_request("Parameter 'name' is required");
     }
-    
+
     let filename = name_param.unwrap();
     let file_path = format!("data/{}", filename);
-    
+
     // Verificar que el archivo existe
     if !std::path::Path::new(&file_path).exists() {
         return not_found(&format!("File '{}' not found", filename));
     }
-    
+
     // Validar codec
     if codec_param != "gzip" && codec_param != "xz" {
         return bad_request("Parameter 'codec' must be 'gzip' or 'xz'");
     }
-    
+
     // Leer archivo
     let file_content = match fs::read(&file_path) {
         Ok(content) => content,
@@ -195,7 +216,7 @@ pub fn compress(_state: &Shared, req: &Request) -> (u16, &'static str, Vec<u8>) 
             return bad_request(&format!("Error reading file: {}", e));
         }
     };
-    
+
     // Comprimir archivo
     let compressed_content = match compress_data(&file_content, codec_param) {
         Ok(content) => content,
@@ -203,54 +224,56 @@ pub fn compress(_state: &Shared, req: &Request) -> (u16, &'static str, Vec<u8>) 
             return bad_request(&format!("Error compressing file: {}", e));
         }
     };
-    
+
     // Escribir archivo comprimido
-    let compressed_filename = format!("{}.{}", filename, 
-        if codec_param == "gzip" { "gz" } else { "xz" });
+    let compressed_filename =
+        format!("{}.{}", filename, if codec_param == "gzip" { "gz" } else { "xz" });
     let compressed_path = format!("data/{}", compressed_filename);
-    
+
     match fs::write(&compressed_path, &compressed_content) {
         Ok(_) => {
             let elapsed = now_ms_since_epoch() - start;
             let original_size = file_content.len();
             let compressed_size = compressed_content.len();
             let compression_ratio = (compressed_size as f64 / original_size as f64) * 100.0;
-            
+
             let body = format!(
                 r#"{{"file":"{}","codec":"{}","compressed_file":"{}","original_size":{},"compressed_size":{},"compression_ratio":{:.2},"elapsed_ms":{}}}"#,
                 filename, codec_param, compressed_filename, original_size, compressed_size, compression_ratio, elapsed
             );
             json_ok(body.into_bytes())
-        },
-        Err(e) => {
-            bad_request(&format!("Error writing compressed file: {}", e))
         }
+        Err(e) => bad_request(&format!("Error writing compressed file: {}", e)),
     }
 }
 
-/// GET /hashfile?name=FILE&algo=sha256
-pub fn hashfile(_state: &Shared, req: &Request) -> (u16, &'static str, Vec<u8>) {
+/// GET /hashfile?name=FILE&algo=sha256[&mode=job]
+pub fn hashfile(state: &Shared, req: &Request) -> (u16, &'static str, Vec<u8>) {
+    if let Some(resp) = maybe_enqueue_job(state, req, "hashfile", &["name", "algo"]) {
+        return resp;
+    }
+
     let start = now_ms_since_epoch();
 
     let name_param = req.query.get("name");
     let default_algo = "sha256".to_string();
     let algo_param = req.query.get("algo").unwrap_or(&default_algo);
-    
+
     if name_param.is_none() {
         return bad_request("Parameter 'name' is required");
     }
-    
+
     let filename = name_param.unwrap();
     let file_path = format!("data/{}", filename);
-    
+
     if !std::path::Path::new(&file_path).exists() {
         return not_found(&format!("File '{}' not found", filename));
     }
-    
+
     if algo_param != "sha256" {
         return bad_request("Parameter 'algo' must be 'sha256'");
     }
-    
+
     let file_content = match fs::read(&file_path) {
         Ok(content) => content,
         Err(e) => {
@@ -258,7 +281,7 @@ pub fn hashfile(_state: &Shared, req: &Request) -> (u16, &'static str, Vec<u8>) 
         }
     };
 
-    // ✅ usa el helper (evita el warning y unifica implementación)
+    // usa el helper (unifica implementación)
     let hex = calculate_file_hash(&file_content);
 
     let elapsed = now_ms_since_epoch() - start;
@@ -269,26 +292,33 @@ pub fn hashfile(_state: &Shared, req: &Request) -> (u16, &'static str, Vec<u8>) 
     json_ok(body.into_bytes())
 }
 
+// =======================
 // Funciones auxiliares
+// =======================
 
 /// Lee números enteros de un archivo (uno por línea)
 fn read_numbers_from_file(file_path: &str) -> Result<Vec<i32>, Box<dyn std::error::Error>> {
     let file = fs::File::open(file_path)?;
     let reader = BufReader::new(file);
     let mut numbers = Vec::new();
-    
+
     for line in reader.lines() {
         let line = line?;
-        if let Ok(num) = line.trim().parse::<i32>() {
-            numbers.push(num);
+        // permite: "1  2   3", "4,5,6" (opcional), "7\n"
+        for token in line.replace(',', " ").split_whitespace() {
+            if let Ok(n) = token.trim().parse::<i32>() {
+                numbers.push(n);
+            }
         }
     }
-    
     Ok(numbers)
 }
 
 /// Escribe números enteros a un archivo (uno por línea)
-fn write_numbers_to_file(file_path: &str, numbers: &[i32]) -> Result<(), Box<dyn std::error::Error>> {
+fn write_numbers_to_file(
+    file_path: &str,
+    numbers: &[i32],
+) -> Result<(), Box<dyn std::error::Error>> {
     let mut file = fs::File::create(file_path)?;
     for &num in numbers {
         writeln!(file, "{}", num)?;
@@ -301,11 +331,11 @@ fn merge_sort(arr: &mut [i32]) {
     if arr.len() <= 1 {
         return;
     }
-    
+
     let mid = arr.len() / 2;
     merge_sort(&mut arr[..mid]);
     merge_sort(&mut arr[mid..]);
-    
+
     let mut temp = arr.to_vec();
     merge(&arr[..mid], &arr[mid..], &mut temp);
     arr.copy_from_slice(&temp);
@@ -315,7 +345,7 @@ fn merge(left: &[i32], right: &[i32], result: &mut [i32]) {
     let mut i = 0;
     let mut j = 0;
     let mut k = 0;
-    
+
     while i < left.len() && j < right.len() {
         if left[i] <= right[j] {
             result[k] = left[i];
@@ -326,13 +356,13 @@ fn merge(left: &[i32], right: &[i32], result: &mut [i32]) {
         }
         k += 1;
     }
-    
+
     while i < left.len() {
         result[k] = left[i];
         i += 1;
         k += 1;
     }
-    
+
     while j < right.len() {
         result[k] = right[j];
         j += 1;
@@ -345,7 +375,7 @@ fn quick_sort(arr: &mut [i32]) {
     if arr.len() <= 1 {
         return;
     }
-    
+
     let pivot = partition(arr);
     quick_sort(&mut arr[..pivot]);
     quick_sort(&mut arr[pivot + 1..]);
@@ -354,14 +384,14 @@ fn quick_sort(arr: &mut [i32]) {
 fn partition(arr: &mut [i32]) -> usize {
     let pivot = arr[arr.len() - 1];
     let mut i = 0;
-    
+
     for j in 0..arr.len() - 1 {
         if arr[j] <= pivot {
             arr.swap(i, j);
             i += 1;
         }
     }
-    
+
     arr.swap(i, arr.len() - 1);
     i
 }
@@ -370,18 +400,18 @@ fn partition(arr: &mut [i32]) -> usize {
 fn count_file_stats(file_path: &str) -> Result<(u64, u64, u64), Box<dyn std::error::Error>> {
     let file = fs::File::open(file_path)?;
     let reader = BufReader::new(file);
-    
+
     let mut lines = 0;
     let mut words = 0;
-    
+
     for line in reader.lines() {
         let line = line?;
         lines += 1;
         words += line.split_whitespace().count() as u64;
     }
-    
+
     let bytes = fs::metadata(file_path)?.len();
-    
+
     Ok((lines, words, bytes))
 }
 
@@ -389,10 +419,10 @@ fn count_file_stats(file_path: &str) -> Result<(u64, u64, u64), Box<dyn std::err
 fn search_in_file(file_path: &str, pattern: &str) -> Result<(u64, Vec<String>), Box<dyn std::error::Error>> {
     let file = fs::File::open(file_path)?;
     let reader = BufReader::new(file);
-    
+
     let mut matches = 0;
     let mut matching_lines = Vec::new();
-    
+
     for line in reader.lines() {
         let line = line?;
         if line.contains(pattern) {
@@ -402,7 +432,7 @@ fn search_in_file(file_path: &str, pattern: &str) -> Result<(u64, Vec<String>), 
             }
         }
     }
-    
+
     Ok((matches, matching_lines))
 }
 
@@ -413,19 +443,19 @@ fn compress_data(data: &[u8], codec: &str) -> Result<Vec<u8>, Box<dyn std::error
             use flate2::write::GzEncoder;
             use flate2::Compression;
             use std::io::Write;
-            
+
             let mut encoder = GzEncoder::new(Vec::new(), Compression::default());
             encoder.write_all(data)?;
             encoder.finish().map_err(|e| e.into())
-        },
+        }
         "xz" => {
             use xz2::write::XzEncoder;
             use std::io::Write;
-            
+
             let mut encoder = XzEncoder::new(Vec::new(), 6);
             encoder.write_all(data)?;
             encoder.finish().map_err(|e| e.into())
-        },
+        }
         _ => Err("Unsupported codec. Use 'gzip' or 'xz'".into()),
     }
 }
@@ -435,11 +465,11 @@ fn compress_rle(data: &[u8]) -> Vec<u8> {
     if data.is_empty() {
         return Vec::new();
     }
-    
+
     let mut compressed = Vec::new();
     let mut current_byte = data[0];
     let mut count = 1;
-    
+
     for &byte in &data[1..] {
         if byte == current_byte && count < 255 {
             count += 1;
@@ -450,10 +480,10 @@ fn compress_rle(data: &[u8]) -> Vec<u8> {
             count = 1;
         }
     }
-    
+
     compressed.push(count);
     compressed.push(current_byte);
-    
+
     compressed
 }
 

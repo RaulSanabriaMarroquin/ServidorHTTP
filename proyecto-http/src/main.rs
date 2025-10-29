@@ -15,8 +15,9 @@ mod config;    // Carga de configuración (por ahora, defaults).
 mod handlers;  // Namespaces para endpoints (vacíos en Sprint 0).
 
 use crate::config::Config;
-use crate::core::{http_listen_loop,AppState, Shared};
+use crate::core::{http_listen_loop, AppState, Shared};
 use crate::router::Router;
+use crate::jobs::spawn_dispatcher;
 
 fn main() {
     // 1) Cargar configuración
@@ -41,6 +42,7 @@ fn main() {
     // sprints posteriores, compartir config/métricas/router/pools con
     // los hilos que procesarán conexiones y jobs.
     let shared: Shared = AppState::shared(cfg.clone(), router);
+    spawn_dispatcher(shared.clone());
 
 
     // 4) Arrancar el loop del listener HTTP/1.0

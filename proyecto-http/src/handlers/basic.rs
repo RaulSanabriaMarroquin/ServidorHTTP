@@ -417,11 +417,14 @@ pub fn createfile(_state: &Shared, req: &Request) -> (u16, &'static str, Vec<u8>
             json_ok(body.into_bytes())
         },
         Err(e) => {
-            let body = format!(
-                r#"{{"error":"file_error","message":"Failed to create file: {}","filename":"{}"}}"#,
-                e, filename
-            );
-            bad_request(&body)
+            (
+                500,
+                "application/json",
+                format!(
+                    r#"{{"error":"file_error","message":"Failed to create file: {}","filename":"{}"}}"#,
+                    e, filename
+                ).into_bytes(),
+            )
         }
     }
 }
@@ -439,12 +442,12 @@ pub fn deletefile(_state: &Shared, req: &Request) -> (u16, &'static str, Vec<u8>
 
     let file_path = format!("data/{}", name_param);
 
-    // Si no existe → 404
+    // Si no existe → 409 (conflict) según enunciado
     if !std::path::Path::new(&file_path).exists() {
         return (
-            404,
+            409,
             "application/json",
-            format!(r#"{{"error":"not_found","message":"File not found","filename":"{}","file_path":"{}"}}"#,
+            format!(r#"{{"error":"conflict","message":"File not found","filename":"{}","file_path":"{}"}}"#,
                     name_param, file_path).into_bytes(),
         );
     }
@@ -1145,8 +1148,19 @@ mod tests {
     fn deletefile_not_found_returns_404() {
         let state = fake_state();
         let req = req_from("/deletefile?name=__no_exist__.txt");
-        let (code, _ctype, _body) = super::deletefile(&state, &req);
-        assert_eq!(code, 404);
+        let (code, _ctype, body) = super::deletefile(&state, &req);
+        // Nuevo comportamiento: 409 Conflict cuando no existe
+        assert_eq!(code, 409);
+        // Guardar salida en txt
+        std::fs::create_dir_all("data").unwrap_or_default();
+        let _ = std::fs::OpenOptions::new()
+            .create(true)
+            .append(true)
+            .open("data/test_outputs.txt")
+            .and_then(|mut f| {
+                use std::io::Write;
+                writeln!(f, "[deletefile_missing] code={} body={}", code, std::str::from_utf8(&body).unwrap_or("<utf8_err>"))
+            });
     }
 
     #[test]
@@ -1154,8 +1168,18 @@ mod tests {
         // Requiere que hayas agregado validación para rechazar '..' o separadores.
         let state = fake_state();
         let req = req_from("/deletefile?name=../evil.txt");
-        let (code, _ctype, _body) = super::deletefile(&state, &req);
+        let (code, _ctype, body) = super::deletefile(&state, &req);
         assert_eq!(code, 400);
+        // Log a txt
+        std::fs::create_dir_all("data").unwrap_or_default();
+        let _ = std::fs::OpenOptions::new()
+            .create(true)
+            .append(true)
+            .open("data/test_outputs.txt")
+            .and_then(|mut f| {
+                use std::io::Write;
+                writeln!(f, "[deletefile_traversal] code={} body={}", code, std::str::from_utf8(&body).unwrap_or("<utf8_err>"))
+            });
     }
 
     #[test]
@@ -1163,8 +1187,40 @@ mod tests {
         // Si decides permitir sólo archivos en data/ (sin subdirectorios), este test valida eso.
         let state = fake_state();
         let req = req_from("/deletefile?name=sub/nums.txt");
-        let (code, _ctype, _body) = super::deletefile(&state, &req);
+        let (code, _ctype, body) = super::deletefile(&state, &req);
         assert_eq!(code, 400);
+        // Log a txt
+        std::fs::create_dir_all("data").unwrap_or_default();
+        let _ = std::fs::OpenOptions::new()
+            .create(true)
+            .append(true)
+            .open("data/test_outputs.txt")
+            .and_then(|mut f| {
+                use std::io::Write;
+                writeln!(f, "[deletefile_subdir] code={} body={}", code, std::str::from_utf8(&body).unwrap_or("<utf8_err>"))
+            });
+    }
+
+    #[test]
+    fn createfile_conflict_returns_409_and_logs() {
+        // Crear archivo inicial
+        std::fs::create_dir_all("data").unwrap_or_default();
+        let _ = std::fs::write("data/conflict.txt", "x");
+
+        let state = fake_state();
+        let req = req_from("/createfile?name=conflict.txt&content=abc&repeat=1");
+        let (code, _ctype, body) = super::createfile(&state, &req);
+        assert_eq!(code, 409);
+
+        // Log a txt
+        let _ = std::fs::OpenOptions::new()
+            .create(true)
+            .append(true)
+            .open("data/test_outputs.txt")
+            .and_then(|mut f| {
+                use std::io::Write;
+                writeln!(f, "[createfile_conflict] code={} body={}", code, std::str::from_utf8(&body).unwrap_or("<utf8_err>"))
+            });
     }
 
     #[test]

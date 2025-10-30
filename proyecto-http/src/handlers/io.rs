@@ -21,6 +21,14 @@ fn bad_request(msg: &str) -> (u16, &'static str, Vec<u8>) {
     )
 }
 
+fn internal_error(msg: &str) -> (u16, &'static str, Vec<u8>) {
+    (
+        500,
+        "application/json",
+        format!(r#"{{"error":"internal_error","detail":"{}"}}"#, msg).into_bytes(),
+    )
+}
+
 fn not_found(msg: &str) -> (u16, &'static str, Vec<u8>) {
     (
         404,
@@ -67,7 +75,7 @@ pub fn sortfile(state: &Shared, req: &Request) -> (u16, &'static str, Vec<u8>) {
     // Leer números (tolerante a CRLF/espacios/comas)
     let numbers = match read_numbers_from_file(&file_path) {
         Ok(nums) => nums,
-        Err(e) => return bad_request(&format!("Error reading file: {}", e)),
+        Err(e) => return internal_error(&format!("Error reading file: {}", e)),
     };
     if numbers.is_empty() {
         return bad_request("File is empty or contains no valid numbers");
@@ -85,7 +93,7 @@ pub fn sortfile(state: &Shared, req: &Request) -> (u16, &'static str, Vec<u8>) {
     let sorted_filename = format!("{}.sorted", filename);
     let sorted_path = format!("data/{}", sorted_filename);
     if let Err(e) = write_numbers_to_file(&sorted_path, &sorted_numbers) {
-        return bad_request(&format!("Error writing sorted file: {}", e));
+        return internal_error(&format!("Error writing sorted file: {}", e));
     }
 
     let elapsed = now_ms_since_epoch() - start;
@@ -124,7 +132,7 @@ pub fn wordcount(state: &Shared, req: &Request) -> (u16, &'static str, Vec<u8>) 
     let (lines, words, bytes) = match count_file_stats(&file_path) {
         Ok(stats) => stats,
         Err(e) => {
-            return bad_request(&format!("Error reading file: {}", e));
+            return internal_error(&format!("Error reading file: {}", e));
         }
     };
 
@@ -166,7 +174,7 @@ pub fn grep(state: &Shared, req: &Request) -> (u16, &'static str, Vec<u8>) {
     let (matches, matching_lines) = match search_in_file(&file_path, pattern) {
         Ok(result) => result,
         Err(e) => {
-            return bad_request(&format!("Error searching in file: {}", e));
+            return internal_error(&format!("Error searching in file: {}", e));
         }
     };
 
@@ -215,7 +223,7 @@ pub fn compress(state: &Shared, req: &Request) -> (u16, &'static str, Vec<u8>) {
     let file_content = match fs::read(&file_path) {
         Ok(content) => content,
         Err(e) => {
-            return bad_request(&format!("Error reading file: {}", e));
+            return internal_error(&format!("Error reading file: {}", e));
         }
     };
 
@@ -223,7 +231,7 @@ pub fn compress(state: &Shared, req: &Request) -> (u16, &'static str, Vec<u8>) {
     let compressed_content = match compress_data(&file_content, codec_param) {
         Ok(content) => content,
         Err(e) => {
-            return bad_request(&format!("Error compressing file: {}", e));
+            return internal_error(&format!("Error compressing file: {}", e));
         }
     };
 
@@ -245,7 +253,7 @@ pub fn compress(state: &Shared, req: &Request) -> (u16, &'static str, Vec<u8>) {
             );
             json_ok(body.into_bytes())
         }
-        Err(e) => bad_request(&format!("Error writing compressed file: {}", e)),
+        Err(e) => internal_error(&format!("Error writing compressed file: {}", e)),
     }
 }
 
@@ -311,7 +319,7 @@ pub fn hashfile(state: &Shared, req: &Request) -> (u16, &'static str, Vec<u8>) {
     let file_content = match fs::read(&file_path) {
         Ok(content) => content,
         Err(e) => {
-            return bad_request(&format!("Error reading file: {}", e));
+            return internal_error(&format!("Error reading file: {}", e));
         }
     };
 
@@ -620,8 +628,18 @@ mod tests {
     fn test_sortfile_nonexistent_file() {
         let state = fake_state();
         let req = req_from("/sortfile?name=nonexistent.txt&algo=merge");
-        let (code, _ctype, _body) = sortfile(&state, &req);
+        let (code, _ctype, body) = sortfile(&state, &req);
         assert_eq!(code, 404);
+        // Log a txt
+        std::fs::create_dir_all("data").unwrap_or_default();
+        let _ = std::fs::OpenOptions::new()
+            .create(true)
+            .append(true)
+            .open("data/test_outputs.txt")
+            .and_then(|mut f| {
+                use std::io::Write;
+                writeln!(f, "[sortfile_nonexistent] code={} body={}", code, std::str::from_utf8(&body).unwrap_or("<utf8_err>"))
+            });
     }
 
     #[test]
@@ -694,8 +712,18 @@ mod tests {
     fn test_grep_nonexistent_file() {
         let state = fake_state();
         let req = req_from("/grep?name=nonexistent.txt&pattern=test");
-        let (code, _ctype, _body) = grep(&state, &req);
+        let (code, _ctype, body) = grep(&state, &req);
         assert_eq!(code, 404);
+        // Log a txt
+        std::fs::create_dir_all("data").unwrap_or_default();
+        let _ = std::fs::OpenOptions::new()
+            .create(true)
+            .append(true)
+            .open("data/test_outputs.txt")
+            .and_then(|mut f| {
+                use std::io::Write;
+                writeln!(f, "[grep_nonexistent] code={} body={}", code, std::str::from_utf8(&body).unwrap_or("<utf8_err>"))
+            });
     }
 
     #[test]
@@ -792,8 +820,18 @@ mod tests {
     fn test_hashfile_missing_name() {
         let state = fake_state();
         let req = req_from("/hashfile?algo=sha256");
-        let (code, _ctype, _body) = hashfile(&state, &req);
+        let (code, _ctype, body) = hashfile(&state, &req);
         assert_eq!(code, 400);
+        // Log a txt
+        std::fs::create_dir_all("data").unwrap_or_default();
+        let _ = std::fs::OpenOptions::new()
+            .create(true)
+            .append(true)
+            .open("data/test_outputs.txt")
+            .and_then(|mut f| {
+                use std::io::Write;
+                writeln!(f, "[hashfile_missing_name] code={} body={}", code, std::str::from_utf8(&body).unwrap_or("<utf8_err>"))
+            });
     }
 
     #[test]
@@ -802,10 +840,47 @@ mod tests {
         
         let state = fake_state();
         let req = req_from("/hashfile?name=test_hash_invalid.txt&algo=md5");
-        let (code, _ctype, _body) = hashfile(&state, &req);
+        let (code, _ctype, body) = hashfile(&state, &req);
         assert_eq!(code, 400);
         
+        // Log a txt
+        std::fs::create_dir_all("data").unwrap_or_default();
+        let _ = std::fs::OpenOptions::new()
+            .create(true)
+            .append(true)
+            .open("data/test_outputs.txt")
+            .and_then(|mut f| {
+                use std::io::Write;
+                writeln!(f, "[hashfile_invalid_algo] code={} body={}", code, std::str::from_utf8(&body).unwrap_or("<utf8_err>"))
+            });
+
         cleanup_test_file("test_hash_invalid.txt");
+    }
+
+    // --- Nuevas pruebas: 500 por errores de IO inesperados ---
+
+    #[test]
+    fn sortfile_directory_instead_of_file_returns_500_and_logs() {
+        // Crear directorio en lugar de archivo para forzar error de lectura tras existir
+        std::fs::create_dir_all("data/test_dir").unwrap_or_default();
+
+        let state = fake_state();
+        let req = req_from("/sortfile?name=test_dir&algo=merge");
+        let (code, _ctype, body) = super::sortfile(&state, &req);
+        assert_eq!(code, 500);
+
+        // Log a txt
+        let _ = std::fs::OpenOptions::new()
+            .create(true)
+            .append(true)
+            .open("data/test_outputs.txt")
+            .and_then(|mut f| {
+                use std::io::Write;
+                writeln!(f, "[sortfile_dir_read_error] code={} body={}", code, std::str::from_utf8(&body).unwrap_or("<utf8_err>"))
+            });
+
+        // Limpieza
+        let _ = std::fs::remove_dir_all("data/test_dir");
     }
 
     // Pruebas de funciones auxiliares

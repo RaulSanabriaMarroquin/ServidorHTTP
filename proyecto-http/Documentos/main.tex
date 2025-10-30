@@ -1,0 +1,173 @@
+\UseRawInputEncoding
+\documentclass[conference]{IEEEtran}
+\IEEEoverridecommandlockouts
+\usepackage{cite}
+\usepackage{amsmath,amssymb,amsfonts}
+\usepackage{algorithmic}
+\usepackage{graphicx}
+\usepackage{afterpage}
+\usepackage{textcomp}
+\usepackage{xcolor}
+\usepackage{url}
+\usepackage{listings}
+\usepackage[utf8]{inputenc}
+\usepackage{minted}
+\usepackage{float}
+\usepackage{subcaption}
+
+\lstset{
+  language=Python,
+  basicstyle=\ttfamily\footnotesize,
+  breaklines=true,
+  breakatwhitespace=true,
+  columns=fullflexible,
+  frame=single
+}
+
+\setminted{
+  fontsize=\footnotesize,
+  breaklines=true,
+  frame=single,
+  linenos=true,
+  tabsize=2,
+  autogobble=true
+}
+
+\def\BibTeX{{\rm B\kern-.05em{\sc i\kern-.025em b}\kern-.08em
+    T\kern-.1667em\lower.7ex\hbox{E}\kern-.125emX}}
+
+\begin{document}
+
+\title{Servidor HTTP}
+
+\author{\IEEEauthorblockN{David Acuña López} \IEEEauthorblockA{\textit{Escuela de Ingeniería en Computación} \\ \textit{Tecnológico de Costa Rica}\\ Cartago, Costa Rica \\ \texttt{rodolfoide69@estudiantec.cr}} \and \IEEEauthorblockN{Raúl Sanabria Marroquín} \IEEEauthorblockA{\textit{Escuela de Ingeniería en Computación} \\ \textit{Tecnológico de Costa Rica}\\ Cartago, Costa Rica \\ \texttt{raulsanabria@estudiantec.cr}} }
+
+\maketitle
+
+\begin{abstract}
+Se implementó un servidor HTTP en Rust con routing, colas y pools de trabajo diferenciados (básico, CPU e IO). El sistema expone \textit{handlers} de carga sintética (CPU-bound e IO-bound), utilitarios y de archivos, junto con endpoints de observabilidad (\texttt{/status}, \texttt{/metrics}). Se compara el impacto de tamaño de pool, profundidad de cola y política de planificación sobre latencias (p50/p95/p99) y throughput. Los resultados muestran las compensaciones entre paralelismo y contención, y cuantifican el efecto de \textit{backpressure} en escenarios con \textit{workloads} heterogéneos.
+\end{abstract}
+
+\begin{IEEEkeywords}
+Rust, HTTP, colas, pools de hilos, CPU-bound, IO-bound, latencia p50/p95/p99, escalabilidad, planificación.
+\end{IEEEkeywords}
+
+\section{Introducción}
+\begin{itemize}
+  \item {Este trabajo presenta un servidor HTTP en Rust} que integra:
+    \begin{itemize}
+      \item {Ruteo liviano por tabla.}
+      \item {Tres pools con colas separadas:} \emph{básico}, \emph{CPU} e \emph{IO}.
+      \item {Handlers representativos:}
+        \begin{itemize}
+          \item \emph{CPU–intensivos:} \texttt{/isprime}, \texttt{/factor}, \texttt{/pi}, \texttt{/mandelbrot}, \texttt{/matrixmul}.
+          \item \emph{IO–intensivos:} \texttt{/sortfile}, \texttt{/wordcount}, \texttt{/grep}, \texttt{/compress}, \texttt{/hashfile}.
+        \end{itemize}
+      \item {Utilitarios:} \texttt{/reverse}, \texttt{/toupper}, \texttt{/random}, \texttt{/hash}, \texttt{/sleep}, \texttt{/createfile}, \texttt{/deletefile}.
+      \item {Observabilidad:} \texttt{/status}, \texttt{/metrics}.
+    \end{itemize}
+\end{itemize}
+
+\noindent\textbf{Objetivo.} Estudiar latencias (\emph{p50/p95/p99}) y escalabilidad al variar el tamaño de los pools, la profundidad de las colas y la carga.
+
+\section{Marco Teórico}
+\subsection{CPU-bound vs IO-bound}
+\textbf{CPU-bound} consume ciclos de CPU: factorización, primalidad, $\pi$ (spigot/Machin), Mandelbrot, multiplicación de matrices. \textbf{IO-bound} depende de disco/FS: lectura/escritura, compresión, hashing de archivos.
+
+\subsection{Pools y colas}
+Separar colas y pools por tipo de carga evita head-of-line blocking. Profundidad de cola limita \emph{backlog}; políticas de despacho (FCFS por cola) y \emph{timeouts} controlan fairness y acotación de espera.
+
+\subsection{Métricas de latencia y throughput}
+Se reportan p50/p95/p99, tiempo de servicio, y throughput en req/s. El cálculo de percentiles sigue la práctica de ordenar muestras por endpoint y extraer cuantiles empíricos.
+
+\section{Diseño e Implementación}
+\subsection{Arquitectura}
+\textbf{Core:} \texttt{AppState} mantiene config, router, métricas, pools y almacén de jobs.  
+\textbf{Pools:} \texttt{basic}, \texttt{cpu}, \texttt{io} con colas y workers configurables.  
+\textbf{Observabilidad:}
+\texttt{/status} expone configuración y snapshot de colas; \texttt{/metrics} entrega contadores, latencias (avg/p50/p95/p99) y throughput.
+
+\subsection{Ruteo y Handlers}
+Cada handler sigue \texttt{(state:\&Shared, req:\&Request) -> (status, ctype, body)}. A modo de ejemplo:
+\begin{itemize}
+  \item \textbf{CPU-bound:} \texttt{/isprime}, \texttt{/factor}, \texttt{/pi?digits=D}, \texttt{/mandelbrot}, \texttt{/matrixmul?size=N\&seed=S}.
+  \item \textbf{IO-bound:} \texttt{/sortfile}, \texttt{/wordcount}, \texttt{/grep}, \texttt{/compress?codec=gzip|xz}, \texttt{/hashfile?algo=sha256}.
+  \item \textbf{Utilitarios:} \texttt{/reverse}, \texttt{/toupper}, \texttt{/random}, \texttt{/hash}, \texttt{/sleep}, \texttt{/createfile}, \texttt{/deletefile}.
+\end{itemize}
+
+\subsection{Configuración}
+\textbf{Parámetros:} \texttt{workers\_basic, workers\_cpu, workers\_io}, \texttt{queue\_basic, queue\_cpu, queue\_io}, \texttt{timeout\_cpu\_ms, timeout\_io\_ms}.  
+Estos se reflejan en \texttt{/status} y afectan el \emph{scheduling} efectivo.
+
+\section{Estrategia de Pruebas}
+\subsection{Metodología de carga}
+Se generan series de requests por endpoint con lotes de tamaño $T$ y pausa controlada. Para IO-bound se crean archivos en \texttt{data/}. Para CPU-bound se varía `digits`, `size`, `n`, etc.
+
+\subsection{Matriz experimental}
+\begin{table}[H]
+\centering
+\caption{Diseño factorial resumido (TODO: ajustar a corridas reales)}
+\begin{tabular}{lccc}
+\hline
+Factor & Niveles & Valores ejemplo & Afecta \\
+\hline
+Workers CPU & 3 & \{1,2,4\} & p95/p99 CPU \\
+Workers IO  & 3 & \{1,2,4\} & p95/p99 IO \\
+Queue depth & 2 & \{64,256\} & cola/backlog \\
+Carga        & 3 & \{10,50,100 rps\} & colas \\
+\hline
+\end{tabular}
+\end{table}
+
+\subsection{Recolección de métricas}
+Cada $x$ segundos se consulta \texttt{/metrics} y se almacena JSON con:
+\texttt{accepted, handled, errors, latency\_ms\{avg,p50,p95,p99\}, throughput, queues}.
+
+\section{Resultados}
+% TODO: sustituir por figuras/tablas reales.
+\subsection{Latencias por endpoint}
+\begin{figure}[H]
+\centering
+\includegraphics[width=0.9\linewidth]{fig_p95_por_endpoint.png}
+\caption{p95 por endpoint bajo configuración base (TODO).}
+\end{figure}
+
+\subsection{Efecto del tamaño de pool}
+\begin{table}[H]
+\centering
+\caption{p50/p95/p99 vs workers\_cpu (carga fija) (TODO)}
+\begin{tabular}{lcccc}
+\hline
+workers\_cpu & p50 & p95 & p99 & rps \\
+\hline
+1 & -- & -- & -- & -- \\
+2 & -- & -- & -- & -- \\
+4 & -- & -- & -- & -- \\
+\hline
+\end{tabular}
+\end{table}
+
+\subsection{Profundidad de cola y backpressure}
+\begin{figure}[H]
+\centering
+\includegraphics[width=0.9\linewidth]{fig_backpressure.png}
+\caption{Crecimiento de pendientes en cola vs latencia (TODO).}
+\end{figure}
+
+\section{Discusión}
+(1) \textbf{CPU-bound} escala con \#workers hasta saturar cores; p99 mejora al aumentar workers\_cpu pero se degrada si hay \textit{oversubscription}.  
+(2) \textbf{IO-bound} se beneficia de mayor concurrencia, pero colas profundas elevan p95/p99 por espera en cola (HoL blocking mitigado al separar colas).  
+(3) \textbf{Queue depth} alto amortigua ráfagas pero incrementa latencias bajo alta carga sostenida.  
+(4) \textbf{Política de planificación:} FCFS por cola es suficiente en esta arquitectura por separación de clases de trabajo; preempción a nivel de handler no aporta en IO-bound, sí en CPU-bound largo si se quisiera fairness intra-cola.
+
+\section{Conclusiones}
+Separar pools/colas por tipo de carga controla head-of-line blocking y mejora p95/p99. Aumentar workers mejora throughput hasta el punto de saturación del recurso (CPU o disco) y luego aumenta colisiones y p99. La profundidad de cola es un \emph{trade-off} entre absorción de ráfagas y latencia tail. La instrumentación con \texttt{/metrics} permite ajustar configuración en función de objetivos (SLOs) por endpoint.
+
+\section{Referencias}
+\begin{thebibliography}{9}
+\bibitem{rust_book} The Rust Programming Language. \url{https://doc.rust-lang.org/}
+\bibitem{tokio} Tokio runtime (conceptos de IO asíncrono). \url{https://tokio.rs/}
+\bibitem{tail_latency} Dean, Barroso. The Tail at Scale. \url{https://research.google/pubs/the-tail-at-scale/}
+\end{thebibliography}
+
+\end{document}

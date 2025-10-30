@@ -14,8 +14,17 @@ pub struct Config {
     pub queue_cpu: usize,
     pub queue_io: usize,
 
+    // --- NUEVO: límites y timeouts para Jobs ---
+    /// Máximo de trabajos encolados antes de aplicar backpressure (503).
+    pub jobs_queue_max: usize,
+
+    /// Timeouts de referencia por tipo de trabajo.
     pub timeout_cpu_ms: u64,
     pub timeout_io_ms: u64,
+
+    /// Límite de concurrencia por tipo (aparte de pools globales)
+    pub max_running_cpu_jobs: usize,
+    pub max_running_io_jobs: usize,
 }
 
 impl Config {
@@ -53,8 +62,12 @@ impl Config {
             queue_cpu:     Self::first_env(&["QUEUE_CPU",   "CPU_QDEPTH",   "CPU_QUEUE"],   128),
             queue_io:      Self::first_env(&["QUEUE_IO",    "IO_QDEPTH",    "IO_QUEUE"],    128),
 
-            timeout_cpu_ms: Self::first_env(&["TIMEOUT_CPU_MS"], 60_000),
-            timeout_io_ms:  Self::first_env(&["TIMEOUT_IO_MS"],  120_000),
+            // --- NUEVOS campos inicializados ---
+            jobs_queue_max:      Self::first_env(&["JOBS_QUEUE_MAX"], 1000),
+            timeout_cpu_ms:      Self::first_env(&["TIMEOUT_CPU_MS"], 60_000),
+            timeout_io_ms:       Self::first_env(&["TIMEOUT_IO_MS"],  120_000),
+            max_running_cpu_jobs: Self::first_env(&["MAX_RUNNING_CPU_JOBS"], 2),
+            max_running_io_jobs:  Self::first_env(&["MAX_RUNNING_IO_JOBS"],  4),
         }
     }
 }

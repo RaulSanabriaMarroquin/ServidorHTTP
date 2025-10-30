@@ -1,8 +1,8 @@
 cargo:rerun-if-changed=build.rs
 cargo:rerun-if-env-changed=LZMA_API_STATIC
-cargo:root=C:\Users\USUARIO\Documents\Github\ServidorHTTP\proyecto-http\target\debug\build\lzma-sys-2e04e35880b8dc97\out
-cargo:include=C:\Users\USUARIO\.cargo\registry\src\index.crates.io-1949cf8c6b5b557f\lzma-sys-0.1.20\xz-5.2/src/liblzma/api
-OUT_DIR = Some(C:\Users\USUARIO\Documents\Github\ServidorHTTP\proyecto-http\target\debug\build\lzma-sys-2e04e35880b8dc97\out)
+cargo:root=C:\Users\Raul\Desktop\TEC\SO\ServidorHTTP\proyecto-http\target\debug\build\lzma-sys-2e04e35880b8dc97\out
+cargo:include=C:\Users\Raul\.cargo\registry\src\index.crates.io-1949cf8c6b5b557f\lzma-sys-0.1.20\xz-5.2/src/liblzma/api
+OUT_DIR = Some(C:\Users\Raul\Desktop\TEC\SO\ServidorHTTP\proyecto-http\target\debug\build\lzma-sys-2e04e35880b8dc97\out)
 OPT_LEVEL = Some(0)
 TARGET = Some(x86_64-pc-windows-msvc)
 CARGO_ENCODED_RUSTFLAGS = Some()
@@ -20,7 +20,7 @@ cargo:rerun-if-env-changed=WindowsSDKVersion
 WindowsSDKVersion = None
 cargo:rerun-if-env-changed=LIB
 LIB = None
-PATH = Some(C:\Users\USUARIO\Documents\Github\ServidorHTTP\proyecto-http\target\debug\deps;C:\Users\USUARIO\Documents\Github\ServidorHTTP\proyecto-http\target\debug;C:\Users\USUARIO\.rustup\toolchains\stable-x86_64-pc-windows-msvc\lib\rustlib\x86_64-pc-windows-msvc\lib;C:\Program Files (x86)\Common Files\Oracle\Java\java8path;C:\Program Files (x86)\Common Files\Oracle\Java\javapath;C:\Python313\Scripts\;C:\Python313\;C:\WINDOWS\system32;C:\WINDOWS;C:\WINDOWS\System32\Wbem;C:\WINDOWS\System32\WindowsPowerShell\v1.0\;C:\WINDOWS\System32\OpenSSH\;C:\Program Files\Git\cmd;C:\Program Files\nodejs\;C:\ProgramData\chocolatey\bin;c:\Users\USUARIO\AppData\Local\Programs\cursor\resources\app\bin;C:\Program Files (x86)\Stellar CLI;C:\Users\USUARIO\AppData\Local\Programs\IPFS Desktop\resources\app.asar.unpacked\node_modules\kubo\kubo\;C:\Program Files\Go\bin;C:\Program Files\Docker\Docker\resources\bin;C:\Program Files (x86)\Windows Kits\10\Windows Performance Toolkit\;C:\Users\USUARIO\.cargo\bin;C:\Users\USUARIO\AppData\Local\Microsoft\WindowsApps;C:\Users\USUARIO\AppData\Local\Programs\Microsoft VS Code\bin;C:\Users\USUARIO\AppData\Roaming\npm;C:\ProgramData\USUARIO\GitHubDesktop\bin;C:\Users\USUARIO\AppData\Local\GitHubDesktop\bin;C:\Program Files\scarb-v2.12.0-x86_64-pc-windows-msvc\bin;C:\Users\USUARIO\go\bin;C:\Users\USUARIO\AppData\Local\Programs\cursor\resources\app\bin;C:\Users\USUARIO\.rustup\toolchains\stable-x86_64-pc-windows-msvc\bin)
+PATH = Some(C:\Users\Raul\Desktop\TEC\SO\ServidorHTTP\proyecto-http\target\debug\deps;C:\Users\Raul\Desktop\TEC\SO\ServidorHTTP\proyecto-http\target\debug;C:\Users\Raul\.rustup\toolchains\stable-x86_64-pc-windows-msvc\lib\rustlib\x86_64-pc-windows-msvc\lib;C:\Program Files (x86)\Common Files\Oracle\Java\java8path;C:\Program Files (x86)\Common Files\Oracle\Java\javapath;C:\Program Files (x86)\Razer Chroma SDK\bin;C:\Program Files\Razer Chroma SDK\bin;C:\Program Files (x86)\NVIDIA Corporation\PhysX\Common;C:\Program Files (x86)\Java\jdk1.8.0_102\bin;C:\Program Files\Microsoft\jdk-11.0.16.101-hotspot\bin;C:\Program Files\Git\cmd;C:\Program Files (x86)\Microsoft SQL Server\160\Tools\Binn\;C:\Program Files\Microsoft SQL Server\160\Tools\Binn\;C:\Program Files\Microsoft SQL Server\Client SDK\ODBC\170\Tools\Binn\;C:\Program Files\Microsoft SQL Server\160\DTS\Binn\;C:\Program Files (x86)\Microsoft SQL Server\160\DTS\Binn\;C:\Program Files\Azure Data Studio\bin;C:\Users\Raul\AppData\Roaming\nvm;C:\Program Files\nodejs;C:\Windows\System32;C:\Users\Raul\Desktop\TEC\Compi\DOSBox\TASM;C:\Program Files\dotnet\;C:\Program Files\Microsoft SQL Server\150\Tools\Binn\;C:\Program Files (x86)\Microsoft Visual Studio\Shared\Python39_64\;C:\Program Files (x86)\Microsoft Visual Studio\Shared\Python39_64\Scripts;C:\Program Files (x86)\Windows Kits\10\Windows Performance Toolkit\;C:\WINDOWS\system32\config\systemprofile\AppData\Local\Microsoft\WindowsApps;C:\Program Files (x86)\Razer\ChromaBroadcast\bin;C:\Program Files\Razer\ChromaBroadcast\bin;C:\Users\Raul\AppData\Local\Microsoft\WindowsApps;C:\Users\Raul\AppData\Local\Programs\Microsoft VS Code\bin;C:\Users\Raul\.dotnet\tools;C:\WINDOWS\system32;C:\WINDOWS;C:\WINDOWS\System32\Wbem;C:\WINDOWS\System32\WindowsPowerShell\v1.0\;C:\WINDOWS\System32\OpenSSH\;C:\Program Files\Calibre2\;C:\WINDOWS\system32\config\systemprofile\AppData\Local\Muse Hub\lib;C:\Users\Raul\.cargo\bin;C:\Users\Raul\AppData\Local\Microsoft\WindowsApps;C:\Program Files\Azure Data Studio\bin;C:\Users\Raul\AppData\Local\Programs\Microsoft VS Code\bin;C:\Users\Raul\AppData\Roaming\nvm;C:\Program Files\nodejs;C:\Users\Raul\.dotnet\tools;C:\Users\Raul\AppData\Local\Muse Hub\lib;c:\Users\Raul\AppData\Roaming\Code\User\globalStorage\github.copilot-chat\debugCommand;C:\Users\Raul\.rustup\toolchains\stable-x86_64-pc-windows-msvc\bin)
 cargo:rerun-if-env-changed=INCLUDE
 INCLUDE = None
 HOST = Some(x86_64-pc-windows-msvc)
@@ -56,9 +56,9 @@ xz-5.2/src/liblzma/check\crc64_fast.c(52): warning C4244: 'initializing': conver
 crc64_table.c
 sha256.c
 alone_decoder.c
-C:\Users\USUARIO\.cargo\registry\src\index.crates.io-1949cf8c6b5b557f\lzma-sys-0.1.20\xz-5.2\src\liblzma\lz\lz_decoder.h(132): warning C4267: 'initializing': conversion from 'size_t' to 'uint32_t', possible loss of data
-C:\Users\USUARIO\.cargo\registry\src\index.crates.io-1949cf8c6b5b557f\lzma-sys-0.1.20\xz-5.2\src\liblzma\lz\lz_decoder.h(159): warning C4267: 'initializing': conversion from 'size_t' to 'const uint32_t', possible loss of data
-C:\Users\USUARIO\.cargo\registry\src\index.crates.io-1949cf8c6b5b557f\lzma-sys-0.1.20\xz-5.2\src\liblzma\lz\lz_decoder.h(160): warning C4267: 'initializing': conversion from 'size_t' to 'uint32_t', possible loss of data
+C:\Users\Raul\.cargo\registry\src\index.crates.io-1949cf8c6b5b557f\lzma-sys-0.1.20\xz-5.2\src\liblzma\lz\lz_decoder.h(132): warning C4267: 'initializing': conversion from 'size_t' to 'uint32_t', possible loss of data
+C:\Users\Raul\.cargo\registry\src\index.crates.io-1949cf8c6b5b557f\lzma-sys-0.1.20\xz-5.2\src\liblzma\lz\lz_decoder.h(159): warning C4267: 'initializing': conversion from 'size_t' to 'const uint32_t', possible loss of data
+C:\Users\Raul\.cargo\registry\src\index.crates.io-1949cf8c6b5b557f\lzma-sys-0.1.20\xz-5.2\src\liblzma\lz\lz_decoder.h(160): warning C4267: 'initializing': conversion from 'size_t' to 'uint32_t', possible loss of data
 alone_encoder.c
 auto_decoder.c
 block_buffer_decoder.c
@@ -66,7 +66,7 @@ block_buffer_encoder.c
 xz-5.2/src/liblzma/common\block_buffer_encoder.c(147): warning C4267: '=': conversion from 'size_t' to 'uint8_t', possible loss of data
 block_decoder.c
 block_encoder.c
-xz-5.2/src/liblzma/common\block_encoder.c(150): warning C4100: 'filters': unreferenced parameter
+xz-5.2/src/liblzma/common\block_encoder.c(150): warning C4100: 'filters': unreferenced formal parameter
 block_header_decoder.c
 block_header_encoder.c
 xz-5.2/src/liblzma/common\block_header_encoder.c(85): warning C4267: '=': conversion from 'size_t' to 'uint8_t', possible loss of data
@@ -89,16 +89,16 @@ hardware_physmem.c
 index.c
 xz-5.2/src/liblzma/common\index.c(102): warning C4200: nonstandard extension used: zero-sized array in struct/union
 index_decoder.c
-xz-5.2/src/liblzma/common\index_decoder.c(63): warning C4100: 'action': unreferenced parameter
-xz-5.2/src/liblzma/common\index_decoder.c(62): warning C4100: 'out_size': unreferenced parameter
-xz-5.2/src/liblzma/common\index_decoder.c(61): warning C4100: 'out_pos': unreferenced parameter
-xz-5.2/src/liblzma/common\index_decoder.c(60): warning C4100: 'out': unreferenced parameter
+xz-5.2/src/liblzma/common\index_decoder.c(63): warning C4100: 'action': unreferenced formal parameter
+xz-5.2/src/liblzma/common\index_decoder.c(62): warning C4100: 'out_size': unreferenced formal parameter
+xz-5.2/src/liblzma/common\index_decoder.c(61): warning C4100: 'out_pos': unreferenced formal parameter
+xz-5.2/src/liblzma/common\index_decoder.c(60): warning C4100: 'out': unreferenced formal parameter
 index_encoder.c
-xz-5.2/src/liblzma/common\index_encoder.c(51): warning C4100: 'action': unreferenced parameter
-xz-5.2/src/liblzma/common\index_encoder.c(48): warning C4100: 'in_size': unreferenced parameter
-xz-5.2/src/liblzma/common\index_encoder.c(47): warning C4100: 'in_pos': unreferenced parameter
-xz-5.2/src/liblzma/common\index_encoder.c(46): warning C4100: 'in': unreferenced parameter
-xz-5.2/src/liblzma/common\index_encoder.c(45): warning C4100: 'allocator': unreferenced parameter
+xz-5.2/src/liblzma/common\index_encoder.c(51): warning C4100: 'action': unreferenced formal parameter
+xz-5.2/src/liblzma/common\index_encoder.c(48): warning C4100: 'in_size': unreferenced formal parameter
+xz-5.2/src/liblzma/common\index_encoder.c(47): warning C4100: 'in_pos': unreferenced formal parameter
+xz-5.2/src/liblzma/common\index_encoder.c(46): warning C4100: 'in': unreferenced formal parameter
+xz-5.2/src/liblzma/common\index_encoder.c(45): warning C4100: 'allocator': unreferenced formal parameter
 index_hash.c
 outqueue.c
 stream_buffer_decoder.c
@@ -106,7 +106,7 @@ stream_buffer_encoder.c
 stream_decoder.c
 stream_encoder.c
 stream_encoder_mt.c
-C:\Users\USUARIO\.cargo\registry\src\index.crates.io-1949cf8c6b5b557f\lzma-sys-0.1.20\xz-5.2\src\liblzma\common\stream_encoder_mt.c(607) : warning C4701: potentially uninitialized local variable 'ret' used
+C:\Users\Raul\.cargo\registry\src\index.crates.io-1949cf8c6b5b557f\lzma-sys-0.1.20\xz-5.2\src\liblzma\common\stream_encoder_mt.c(607) : warning C4701: potentially uninitialized local variable 'ret' used
 stream_flags_common.c
 stream_flags_decoder.c
 stream_flags_encoder.c
@@ -116,12 +116,12 @@ vli_size.c
 delta_common.c
 delta_decoder.c
 delta_encoder.c
-xz-5.2/src/liblzma/delta\delta_encoder.c(90): warning C4100: 'filters_null': unreferenced parameter
+xz-5.2/src/liblzma/delta\delta_encoder.c(90): warning C4100: 'filters_null': unreferenced formal parameter
 xz-5.2/src/liblzma/delta\delta_encoder.c(122): warning C4244: '=': conversion from 'const uint32_t' to 'uint8_t', possible loss of data
 lz_decoder.c
-C:\Users\USUARIO\.cargo\registry\src\index.crates.io-1949cf8c6b5b557f\lzma-sys-0.1.20\xz-5.2\src\liblzma\lz\lz_decoder.h(132): warning C4267: 'initializing': conversion from 'size_t' to 'uint32_t', possible loss of data
-C:\Users\USUARIO\.cargo\registry\src\index.crates.io-1949cf8c6b5b557f\lzma-sys-0.1.20\xz-5.2\src\liblzma\lz\lz_decoder.h(159): warning C4267: 'initializing': conversion from 'size_t' to 'const uint32_t', possible loss of data
-C:\Users\USUARIO\.cargo\registry\src\index.crates.io-1949cf8c6b5b557f\lzma-sys-0.1.20\xz-5.2\src\liblzma\lz\lz_decoder.h(160): warning C4267: 'initializing': conversion from 'size_t' to 'uint32_t', possible loss of data
+C:\Users\Raul\.cargo\registry\src\index.crates.io-1949cf8c6b5b557f\lzma-sys-0.1.20\xz-5.2\src\liblzma\lz\lz_decoder.h(132): warning C4267: 'initializing': conversion from 'size_t' to 'uint32_t', possible loss of data
+C:\Users\Raul\.cargo\registry\src\index.crates.io-1949cf8c6b5b557f\lzma-sys-0.1.20\xz-5.2\src\liblzma\lz\lz_decoder.h(159): warning C4267: 'initializing': conversion from 'size_t' to 'const uint32_t', possible loss of data
+C:\Users\Raul\.cargo\registry\src\index.crates.io-1949cf8c6b5b557f\lzma-sys-0.1.20\xz-5.2\src\liblzma\lz\lz_decoder.h(160): warning C4267: 'initializing': conversion from 'size_t' to 'uint32_t', possible loss of data
 lz_encoder.c
 xz-5.2/src/liblzma/lz\lz_encoder.c(111): warning C4267: '=': conversion from 'size_t' to 'uint32_t', possible loss of data
 xz-5.2/src/liblzma/lz\lz_encoder.c(205): warning C4267: '=': conversion from 'size_t' to 'uint32_t', possible loss of data
@@ -132,7 +132,7 @@ xz-5.2/src/liblzma/lz\lz_encoder.c(240): warning C4267: '=': conversion from 'si
 xz-5.2/src/liblzma/lz\lz_encoder.c(257): warning C4267: '=': conversion from 'size_t' to 'uint32_t', possible loss of data
 xz-5.2/src/liblzma/lz\lz_encoder.c(310): warning C4267: '=': conversion from 'size_t' to 'uint32_t', possible loss of data
 xz-5.2/src/liblzma/lz\lz_encoder.c(221): warning C4267: 'initializing': conversion from 'size_t' to 'uint32_t', possible loss of data
-xz-5.2/src/liblzma/lz\lz_encoder.c(508): warning C4100: 'filters_null': unreferenced parameter
+xz-5.2/src/liblzma/lz\lz_encoder.c(508): warning C4100: 'filters_null': unreferenced formal parameter
 lz_encoder_mf.c
 xz-5.2/src/liblzma/lz\lz_encoder_mf.c(333): warning C4244: '=': conversion from '__int64' to 'uint32_t', possible loss of data
 xz-5.2/src/liblzma/lz\lz_encoder_mf.c(412): warning C4244: '=': conversion from '__int64' to 'uint32_t', possible loss of data
@@ -141,9 +141,9 @@ xz-5.2/src/liblzma/lz\lz_encoder_mf.c(648): warning C4244: '=': conversion from 
 xz-5.2/src/liblzma/lz\lz_encoder_mf.c(721): warning C4244: '=': conversion from '__int64' to 'uint32_t', possible loss of data
 fastpos_table.c
 lzma2_decoder.c
-C:\Users\USUARIO\.cargo\registry\src\index.crates.io-1949cf8c6b5b557f\lzma-sys-0.1.20\xz-5.2\src\liblzma\lz\lz_decoder.h(132): warning C4267: 'initializing': conversion from 'size_t' to 'uint32_t', possible loss of data
-C:\Users\USUARIO\.cargo\registry\src\index.crates.io-1949cf8c6b5b557f\lzma-sys-0.1.20\xz-5.2\src\liblzma\lz\lz_decoder.h(159): warning C4267: 'initializing': conversion from 'size_t' to 'const uint32_t', possible loss of data
-C:\Users\USUARIO\.cargo\registry\src\index.crates.io-1949cf8c6b5b557f\lzma-sys-0.1.20\xz-5.2\src\liblzma\lz\lz_decoder.h(160): warning C4267: 'initializing': conversion from 'size_t' to 'uint32_t', possible loss of data
+C:\Users\Raul\.cargo\registry\src\index.crates.io-1949cf8c6b5b557f\lzma-sys-0.1.20\xz-5.2\src\liblzma\lz\lz_decoder.h(132): warning C4267: 'initializing': conversion from 'size_t' to 'uint32_t', possible loss of data
+C:\Users\Raul\.cargo\registry\src\index.crates.io-1949cf8c6b5b557f\lzma-sys-0.1.20\xz-5.2\src\liblzma\lz\lz_decoder.h(159): warning C4267: 'initializing': conversion from 'size_t' to 'const uint32_t', possible loss of data
+C:\Users\Raul\.cargo\registry\src\index.crates.io-1949cf8c6b5b557f\lzma-sys-0.1.20\xz-5.2\src\liblzma\lz\lz_decoder.h(160): warning C4267: 'initializing': conversion from 'size_t' to 'uint32_t', possible loss of data
 lzma2_encoder.c
 xz-5.2/src/liblzma/lzma\lzma2_encoder.c(85): warning C4267: '+=': conversion from 'size_t' to 'uint8_t', possible loss of data
 xz-5.2/src/liblzma/lzma\lzma2_encoder.c(91): warning C4267: '=': conversion from 'size_t' to 'uint8_t', possible loss of data
@@ -151,9 +151,9 @@ xz-5.2/src/liblzma/lzma\lzma2_encoder.c(126): warning C4267: '=': conversion fro
 xz-5.2/src/liblzma/lzma\lzma2_encoder.c(170): warning C4267: 'initializing': conversion from 'size_t' to 'const uint32_t', possible loss of data
 xz-5.2/src/liblzma/lzma\lzma2_encoder.c(397): warning C4244: '=': conversion from 'uint32_t' to 'uint8_t', possible loss of data
 lzma_decoder.c
-C:\Users\USUARIO\.cargo\registry\src\index.crates.io-1949cf8c6b5b557f\lzma-sys-0.1.20\xz-5.2\src\liblzma\lz\lz_decoder.h(132): warning C4267: 'initializing': conversion from 'size_t' to 'uint32_t', possible loss of data
-C:\Users\USUARIO\.cargo\registry\src\index.crates.io-1949cf8c6b5b557f\lzma-sys-0.1.20\xz-5.2\src\liblzma\lz\lz_decoder.h(159): warning C4267: 'initializing': conversion from 'size_t' to 'const uint32_t', possible loss of data
-C:\Users\USUARIO\.cargo\registry\src\index.crates.io-1949cf8c6b5b557f\lzma-sys-0.1.20\xz-5.2\src\liblzma\lz\lz_decoder.h(160): warning C4267: 'initializing': conversion from 'size_t' to 'uint32_t', possible loss of data
+C:\Users\Raul\.cargo\registry\src\index.crates.io-1949cf8c6b5b557f\lzma-sys-0.1.20\xz-5.2\src\liblzma\lz\lz_decoder.h(132): warning C4267: 'initializing': conversion from 'size_t' to 'uint32_t', possible loss of data
+C:\Users\Raul\.cargo\registry\src\index.crates.io-1949cf8c6b5b557f\lzma-sys-0.1.20\xz-5.2\src\liblzma\lz\lz_decoder.h(159): warning C4267: 'initializing': conversion from 'size_t' to 'const uint32_t', possible loss of data
+C:\Users\Raul\.cargo\registry\src\index.crates.io-1949cf8c6b5b557f\lzma-sys-0.1.20\xz-5.2\src\liblzma\lz\lz_decoder.h(160): warning C4267: 'initializing': conversion from 'size_t' to 'uint32_t', possible loss of data
 xz-5.2/src/liblzma/lzma\lzma_decoder.c(485): warning C4244: 'function': conversion from 'uint32_t' to 'uint8_t', possible loss of data
 xz-5.2/src/liblzma/lzma\lzma_decoder.c(1007): warning C4244: '-=': conversion from 'uint32_t' to 'uint8_t', possible loss of data
 lzma_encoder.c
@@ -163,35 +163,35 @@ lzma_encoder_optimum_normal.c
 lzma_encoder_presets.c
 price_table.c
 arm.c
-C:\Users\USUARIO\.cargo\registry\src\index.crates.io-1949cf8c6b5b557f\lzma-sys-0.1.20\xz-5.2\src\liblzma\simple\simple_private.h(62): warning C4200: nonstandard extension used: zero-sized array in struct/union
+C:\Users\Raul\.cargo\registry\src\index.crates.io-1949cf8c6b5b557f\lzma-sys-0.1.20\xz-5.2\src\liblzma\simple\simple_private.h(62): warning C4200: nonstandard extension used: zero-sized array in struct/union
 xz-5.2/src/liblzma/simple\arm.c(37): warning C4244: '=': conversion from 'uint32_t' to 'uint8_t', possible loss of data
 xz-5.2/src/liblzma/simple\arm.c(38): warning C4244: '=': conversion from 'uint32_t' to 'uint8_t', possible loss of data
 xz-5.2/src/liblzma/simple\arm.c(39): warning C4244: '=': conversion from 'uint32_t' to 'uint8_t', possible loss of data
-xz-5.2/src/liblzma/simple\arm.c(18): warning C4100: 'simple': unreferenced parameter
+xz-5.2/src/liblzma/simple\arm.c(18): warning C4100: 'simple': unreferenced formal parameter
 armthumb.c
-C:\Users\USUARIO\.cargo\registry\src\index.crates.io-1949cf8c6b5b557f\lzma-sys-0.1.20\xz-5.2\src\liblzma\simple\simple_private.h(62): warning C4200: nonstandard extension used: zero-sized array in struct/union
+C:\Users\Raul\.cargo\registry\src\index.crates.io-1949cf8c6b5b557f\lzma-sys-0.1.20\xz-5.2\src\liblzma\simple\simple_private.h(62): warning C4200: nonstandard extension used: zero-sized array in struct/union
 xz-5.2/src/liblzma/simple\armthumb.c(41): warning C4244: '=': conversion from 'uint32_t' to 'uint8_t', possible loss of data
 xz-5.2/src/liblzma/simple\armthumb.c(43): warning C4244: '=': conversion from 'uint32_t' to 'uint8_t', possible loss of data
-xz-5.2/src/liblzma/simple\armthumb.c(18): warning C4100: 'simple': unreferenced parameter
+xz-5.2/src/liblzma/simple\armthumb.c(18): warning C4100: 'simple': unreferenced formal parameter
 ia64.c
-C:\Users\USUARIO\.cargo\registry\src\index.crates.io-1949cf8c6b5b557f\lzma-sys-0.1.20\xz-5.2\src\liblzma\simple\simple_private.h(62): warning C4200: nonstandard extension used: zero-sized array in struct/union
-xz-5.2/src/liblzma/simple\ia64.c(18): warning C4100: 'simple': unreferenced parameter
+C:\Users\Raul\.cargo\registry\src\index.crates.io-1949cf8c6b5b557f\lzma-sys-0.1.20\xz-5.2\src\liblzma\simple\simple_private.h(62): warning C4200: nonstandard extension used: zero-sized array in struct/union
+xz-5.2/src/liblzma/simple\ia64.c(18): warning C4100: 'simple': unreferenced formal parameter
 powerpc.c
-C:\Users\USUARIO\.cargo\registry\src\index.crates.io-1949cf8c6b5b557f\lzma-sys-0.1.20\xz-5.2\src\liblzma\simple\simple_private.h(62): warning C4200: nonstandard extension used: zero-sized array in struct/union
+C:\Users\Raul\.cargo\registry\src\index.crates.io-1949cf8c6b5b557f\lzma-sys-0.1.20\xz-5.2\src\liblzma\simple\simple_private.h(62): warning C4200: nonstandard extension used: zero-sized array in struct/union
 xz-5.2/src/liblzma/simple\powerpc.c(41): warning C4244: '=': conversion from 'uint32_t' to 'uint8_t', possible loss of data
 xz-5.2/src/liblzma/simple\powerpc.c(42): warning C4244: '=': conversion from 'uint32_t' to 'uint8_t', possible loss of data
-xz-5.2/src/liblzma/simple\powerpc.c(18): warning C4100: 'simple': unreferenced parameter
+xz-5.2/src/liblzma/simple\powerpc.c(18): warning C4100: 'simple': unreferenced formal parameter
 simple_coder.c
-C:\Users\USUARIO\.cargo\registry\src\index.crates.io-1949cf8c6b5b557f\lzma-sys-0.1.20\xz-5.2\src\liblzma\simple\simple_private.h(62): warning C4200: nonstandard extension used: zero-sized array in struct/union
+C:\Users\Raul\.cargo\registry\src\index.crates.io-1949cf8c6b5b557f\lzma-sys-0.1.20\xz-5.2\src\liblzma\simple\simple_private.h(62): warning C4200: nonstandard extension used: zero-sized array in struct/union
 xz-5.2/src/liblzma/simple\simple_coder.c(63): warning C4267: '+=': conversion from 'size_t' to 'uint32_t', possible loss of data
-xz-5.2/src/liblzma/simple\simple_coder.c(223): warning C4100: 'filters_null': unreferenced parameter
+xz-5.2/src/liblzma/simple\simple_coder.c(223): warning C4100: 'filters_null': unreferenced formal parameter
 simple_decoder.c
 simple_encoder.c
 sparc.c
-C:\Users\USUARIO\.cargo\registry\src\index.crates.io-1949cf8c6b5b557f\lzma-sys-0.1.20\xz-5.2\src\liblzma\simple\simple_private.h(62): warning C4200: nonstandard extension used: zero-sized array in struct/union
-xz-5.2/src/liblzma/simple\sparc.c(18): warning C4100: 'simple': unreferenced parameter
+C:\Users\Raul\.cargo\registry\src\index.crates.io-1949cf8c6b5b557f\lzma-sys-0.1.20\xz-5.2\src\liblzma\simple\simple_private.h(62): warning C4200: nonstandard extension used: zero-sized array in struct/union
+xz-5.2/src/liblzma/simple\sparc.c(18): warning C4100: 'simple': unreferenced formal parameter
 x86.c
-C:\Users\USUARIO\.cargo\registry\src\index.crates.io-1949cf8c6b5b557f\lzma-sys-0.1.20\xz-5.2\src\liblzma\simple\simple_private.h(62): warning C4200: nonstandard extension used: zero-sized array in struct/union
+C:\Users\Raul\.cargo\registry\src\index.crates.io-1949cf8c6b5b557f\lzma-sys-0.1.20\xz-5.2\src\liblzma\simple\simple_private.h(62): warning C4200: nonstandard extension used: zero-sized array in struct/union
 cargo:rerun-if-env-changed=AR_x86_64-pc-windows-msvc
 AR_x86_64-pc-windows-msvc = None
 cargo:rerun-if-env-changed=AR_x86_64_pc_windows_msvc
@@ -208,6 +208,6 @@ cargo:rerun-if-env-changed=ARFLAGS_x86_64_pc_windows_msvc
 ARFLAGS_x86_64_pc_windows_msvc = None
 cargo:rerun-if-env-changed=ARFLAGS_x86_64-pc-windows-msvc
 ARFLAGS_x86_64-pc-windows-msvc = None
-cargo:rustc-link-search=native=C:\Program Files\Microsoft Visual Studio\2022\Community\VC\Tools\MSVC\14.44.35207\atlmfc\lib\x64
+cargo:rustc-link-search=native=C:\Program Files\Microsoft Visual Studio\2022\Community\VC\Tools\MSVC\14.41.34120\atlmfc\lib\x64
 cargo:rustc-link-lib=static=lzma
-cargo:rustc-link-search=native=C:\Users\USUARIO\Documents\Github\ServidorHTTP\proyecto-http\target\debug\build\lzma-sys-2e04e35880b8dc97\out
+cargo:rustc-link-search=native=C:\Users\Raul\Desktop\TEC\SO\ServidorHTTP\proyecto-http\target\debug\build\lzma-sys-2e04e35880b8dc97\out

@@ -25,6 +25,92 @@ fn not_found_json(path: &str) -> (u16, &'static str, Vec<u8>) {
     )
 }
 
+/// GET /simulate?seconds=s&task=name
+/// Simula trabajo real durante ~s segundos realizando cómputo (hashes) para no bloquear
+/// con sleep puro. Limita el máximo a 15s.
+pub fn simulate(_state: &Shared, req: &Request) -> (u16, &'static str, Vec<u8>) {
+    let default_seconds = "1".to_string();
+    let seconds_str = req.query.get("seconds").unwrap_or(&default_seconds);
+    let task_name = req.query.get("task").cloned().unwrap_or_else(|| "cpu_hash".to_string());
+
+    let seconds: u64 = match seconds_str.parse::<u64>() {
+        Ok(s) if s > 0 => s.min(15),
+        _ => return bad_request("Parameter 'seconds' must be a positive integer"),
+    };
+
+    // Trabajo real: calcular hashes sobre un buffer para ~seconds segundos
+    let start = now_ms_since_epoch();
+    let deadline = start + (seconds as u128) * 1000;
+    let mut iterations: u64 = 0;
+    let mut bytes_processed: u64 = 0;
+
+    // Buffer determinístico pequeño para no consumir memoria en exceso
+    let mut data = vec![0u8; 64 * 1024]; // 64KiB
+    for i in 0..data.len() {
+        data[i] = (i as u8).wrapping_mul(31);
+    }
+
+    use sha2::{Digest, Sha256};
+    while now_ms_since_epoch() < deadline {
+        let mut hasher = Sha256::new();
+        hasher.update(&data);
+        let _ = hasher.finalize();
+        iterations += 1;
+        bytes_processed += data.len() as u64;
+    }
+
+    let elapsed = now_ms_since_epoch() - start;
+    let body = format!(
+        r#"{{"task":"{}","seconds_requested":{},"elapsed_ms":{},"iterations":{},"bytes_processed":{}}}"#,
+        task_name, seconds, elapsed, iterations, bytes_processed
+    );
+    json_ok(body.into_bytes())
+}
+
+/// GET /loadtest?tasks=n&sleep=ms
+/// Lanza `n` tareas ligeras en paralelo que duermen `sleep` milisegundos cada una.
+/// Devuelve tiempo total y throughput aproximado. Limita n a 2000 y sleep a 15000ms.
+pub fn loadtest(_state: &Shared, req: &Request) -> (u16, &'static str, Vec<u8>) {
+    let default_tasks = "10".to_string();
+    let default_sleep = "10".to_string();
+
+    let tasks_s = req.query.get("tasks").unwrap_or(&default_tasks);
+    let sleep_s = req.query.get("sleep").unwrap_or(&default_sleep);
+
+    let tasks: usize = match tasks_s.parse::<usize>() {
+        Ok(v) if v > 0 => v.min(2000),
+        _ => return bad_request("Parameter 'tasks' must be a positive integer"),
+    };
+    let sleep_ms: u64 = match sleep_s.parse::<u64>() {
+        Ok(v) => v.min(15000),
+        _ => return bad_request("Parameter 'sleep' must be a non-negative integer"),
+    };
+
+    let start = now_ms_since_epoch();
+
+    let mut handles = Vec::with_capacity(tasks);
+    for _ in 0..tasks {
+        handles.push(std::thread::spawn({
+            let dur = std::time::Duration::from_millis(sleep_ms);
+            move || {
+                std::thread::sleep(dur);
+            }
+        }));
+    }
+    for h in handles {
+        let _ = h.join();
+    }
+
+    let elapsed = now_ms_since_epoch() - start;
+    let throughput = if elapsed > 0 { (tasks as u128 * 1000) / elapsed } else { 0 };
+
+    let body = format!(
+        r#"{{"tasks":{},"sleep_ms":{},"elapsed_ms":{},"throughput_tps":{}}}"#,
+        tasks, sleep_ms, elapsed, throughput
+    );
+    json_ok(body.into_bytes())
+}
+
 /// GET /status
 pub fn status(state: &Shared, _req: &Request) -> (u16, &'static str, Vec<u8>) {
     let (accepted, handled) = state.metrics.snapshot();
@@ -584,8 +670,8 @@ pub fn sleep(_state: &Shared, req: &Request) -> (u16, &'static str, Vec<u8>) {
     (None, Some(ms_str)) => ms_str.parse::<u64>().unwrap_or(1000),
     _ => 1000
     };
-    if ms > 5000 {
-        return bad_request("ms too large (max 5000)");
+    if ms > 15000 {
+        return bad_request("ms too large (max 15000)");
     }
     std::thread::sleep(std::time::Duration::from_millis(ms));
     json_ok(

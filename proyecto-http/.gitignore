@@ -178,4 +178,4 @@ cache/
 # Archivos de temporales del sistema
 /tmp/
 /temp/
-/target/
+.target/

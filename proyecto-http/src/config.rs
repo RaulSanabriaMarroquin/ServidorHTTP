@@ -54,7 +54,7 @@ impl Config {
         Self {
             port: Self::first_env(&["PORT", "HTTP_PORT"], 8080),
 
-            workers_basic: Self::first_env(&["WORKERS_BASIC", "BASIC_WORKERS"], 2),
+            workers_basic: Self::first_env(&["WORKERS_BASIC", "BASIC_WORKERS"], 4),
             workers_cpu:   Self::first_env(&["WORKERS_CPU",   "CPU_WORKERS"],   4),
             workers_io:    Self::first_env(&["WORKERS_IO",    "IO_WORKERS"],    4),
 

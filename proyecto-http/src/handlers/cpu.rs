@@ -26,21 +26,7 @@ fn bad_request(msg: &str) -> (u16, &'static str, Vec<u8>) {
 pub fn isprime(state: &Shared, req: &Request) -> (u16, &'static str, Vec<u8>) {
     // --- doble modo ---
     if let Some(resp) = maybe_enqueue_job(state, req, "isprime", &["n","method"]) { return resp; }
-    if req.query.get("mode").map(|m| m == "job").unwrap_or(false) {
-        let task = "isprime";
-        let prio = req.query.get("prio").cloned().unwrap_or_else(|| "normal".to_string());
-        let mut params = req.query.clone();
-        params.remove("mode");
-        params.remove("prio");
-        let job_id = state
-            .job_store
-            .submit(task.to_string(), params, prio.parse().unwrap_or(Priority::Normal));
-        let body = format!(
-            r#"{{"job_id":"{}","status":"queued","task":"{}","priority":"{}"}}"#,
-            job_id.0, task, prio
-        );
-        return (200, "application/json", body.into_bytes());
-    }
+    // (el modo job ya fue manejado por maybe_enqueue_job)
     // -------------------
 
     let start = now_ms_since_epoch();
@@ -92,21 +78,7 @@ pub fn isprime(state: &Shared, req: &Request) -> (u16, &'static str, Vec<u8>) {
 pub fn factor(state: &Shared, req: &Request) -> (u16, &'static str, Vec<u8>) {
     // --- doble modo ---
     if let Some(resp) = maybe_enqueue_job(state, req, "factor", &["n"]) { return resp; }
-    if req.query.get("mode").map(|m| m == "job").unwrap_or(false) {
-        let task = "factor";
-        let prio = req.query.get("prio").cloned().unwrap_or_else(|| "normal".to_string());
-        let mut params = req.query.clone();
-        params.remove("mode");
-        params.remove("prio");
-        let job_id = state
-            .job_store
-            .submit(task.to_string(), params, prio.parse().unwrap_or(Priority::Normal));
-        let body = format!(
-            r#"{{"job_id":"{}","status":"queued","task":"{}","priority":"{}"}}"#,
-            job_id.0, task, prio
-        );
-        return (200, "application/json", body.into_bytes());
-    }
+    // (el modo job ya fue manejado por maybe_enqueue_job)
     // -------------------
 
     let start = now_ms_since_epoch();
@@ -269,21 +241,7 @@ fn pi_with_machin(digits: u32) -> String {
 pub fn pi(state: &Shared, req: &Request) -> (u16, &'static str, Vec<u8>) {
     // --- doble modo ---
     if let Some(resp) = maybe_enqueue_job(state, req, "pi", &["digits","method"]) { return resp; }
-    if req.query.get("mode").map(|m| m == "job").unwrap_or(false) {
-        let task = "pi";
-        let prio = req.query.get("prio").cloned().unwrap_or_else(|| "normal".to_string());
-        let mut params = req.query.clone();
-        params.remove("mode");
-        params.remove("prio");
-        let job_id = state
-            .job_store
-            .submit(task.to_string(), params, prio.parse().unwrap_or(Priority::Normal));
-        let body = format!(
-            r#"{{"job_id":"{}","status":"queued","task":"{}","priority":"{}"}}"#,
-            job_id.0, task, prio
-        );
-        return (200, "application/json", body.into_bytes());
-    }
+    // (el modo job ya fue manejado por maybe_enqueue_job)
     // -------------------
 
     let start = now_ms_since_epoch();
@@ -314,21 +272,7 @@ pub fn pi(state: &Shared, req: &Request) -> (u16, &'static str, Vec<u8>) {
 pub fn mandelbrot(state: &Shared, req: &Request) -> (u16, &'static str, Vec<u8>) {
     // --- doble modo ---
     if let Some(resp) = maybe_enqueue_job(state, req, "mandelbrot", &["width","height","max_iter"]) { return resp; }
-    if req.query.get("mode").map(|m| m == "job").unwrap_or(false) {
-        let task = "mandelbrot";
-        let prio = req.query.get("prio").cloned().unwrap_or_else(|| "normal".to_string());
-        let mut params = req.query.clone();
-        params.remove("mode");
-        params.remove("prio");
-        let job_id = state
-            .job_store
-            .submit(task.to_string(), params, prio.parse().unwrap_or(Priority::Normal));
-        let body = format!(
-            r#"{{"job_id":"{}","status":"queued","task":"{}","priority":"{}"}}"#,
-            job_id.0, task, prio
-        );
-        return (200, "application/json", body.into_bytes());
-    }
+    // (el modo job ya fue manejado por maybe_enqueue_job)
     // -------------------
 
     let start = now_ms_since_epoch();
@@ -380,21 +324,7 @@ pub fn mandelbrot(state: &Shared, req: &Request) -> (u16, &'static str, Vec<u8>)
 pub fn matrixmul(state: &Shared, req: &Request) -> (u16, &'static str, Vec<u8>) {
     // --- doble modo ---
     if let Some(resp) = maybe_enqueue_job(state, req, "matrixmul", &["size","seed"]) { return resp; }
-    if req.query.get("mode").map(|m| m == "job").unwrap_or(false) {
-        let task = "matrixmul";
-        let prio = req.query.get("prio").cloned().unwrap_or_else(|| "normal".to_string());
-        let mut params = req.query.clone();
-        params.remove("mode");
-        params.remove("prio");
-        let job_id = state
-            .job_store
-            .submit(task.to_string(), params, prio.parse().unwrap_or(Priority::Normal));
-        let body = format!(
-            r#"{{"job_id":"{}","status":"queued","task":"{}","priority":"{}"}}"#,
-            job_id.0, task, prio
-        );
-        return (200, "application/json", body.into_bytes());
-    }
+    // (el modo job ya fue manejado por maybe_enqueue_job)
     // -------------------
 
     use sha2::Digest;

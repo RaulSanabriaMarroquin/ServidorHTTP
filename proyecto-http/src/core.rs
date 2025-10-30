@@ -199,11 +199,23 @@ fn parse_query(qs: &str) -> HashMap<String, String> {
     m
 }
 
+/// Extrae el nombre del comando desde el path.
+/// Ejemplos: "/isprime?n=97" -> "isprime", "/jobs/submit" -> "jobs/submit"
+fn extract_command_name(path: &str) -> String {
+    // Remover el "/" inicial si existe
+    let path = path.trim_start_matches('/');
+    // Si hay query params, tomar solo la parte antes de "?"
+    let cmd = path.split('?').next().unwrap_or(path);
+    // Si está vacío o es solo "/", usar "root"
+    if cmd.is_empty() {
+        "root".to_string()
+    } else {
+        cmd.to_string()
+    }
+}
+
 /// Encola la ejecución del `handler` en `pool`.
-/// El worker:
-///   - ejecuta el handler,
-///   - decide un "reason" básico para el status,
-///   - escribe la respuesta en el stream clonado.
+/// Registra t_enqueue y pasa información de timing al worker.
 fn enqueue_on_pool(
     stream: &mut TcpStream,
     req: Request,
@@ -214,9 +226,27 @@ fn enqueue_on_pool(
     let req_cloned = req.clone();
     let state_cloned = Arc::clone(state);
     let mut stream_clone = stream.try_clone()?; // cada tarea escribe en su propio handle
+    
+    // Extraer nombre del comando
+    let cmd_name = extract_command_name(&req.path);
+    
+    // Registrar t_enqueue (momento en que se encola)
+    let t_enqueue = now_ms_since_epoch();
 
     match pool.submit(Box::new(move || {
+        // Registrar t_start (momento en que worker toma la tarea)
+        let t_start = now_ms_since_epoch();
+        let wait_ms = (t_start - t_enqueue) as u64;
+        
+        // Ejecutar handler
         let (status, _ctype, body) = handler(&state_cloned, &req_cloned);
+        
+        // Registrar t_end (momento en que termina la ejecución)
+        let t_end = now_ms_since_epoch();
+        let exec_ms = (t_end - t_start) as u64;
+        
+        // Registrar métricas por comando
+        state_cloned.metrics.record_command_timing(&cmd_name, wait_ms, exec_ms);
 
         let reason = match status {
             200 => "OK",

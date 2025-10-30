@@ -377,16 +377,92 @@ fn validate_filename(name: &str) -> bool {
     !name.contains('/') && !name.contains('\\') && !name.contains("..") && !name.is_empty()
 }   
 
+/// Helper: determina a qué pool pertenece un comando (para métricas de colas/workers)
+fn get_command_pool(cmd: &str) -> Option<&'static str> {
+    match cmd {
+        // Básicos → pool "basic"
+        "status" | "timestamp" | "reverse" | "toupper" | "help" | "random" | "hash" |
+        "createfile" | "deletefile" | "metrics" | "jobs/submit" | "jobs/status" |
+        "jobs/result" | "jobs/cancel" => Some("basic"),
+        // CPU-bound → pool "cpu"
+        "fibonacci" | "isprime" | "factor" | "pi" | "mandelbrot" | "matrixmul" => Some("cpu"),
+        // IO-bound → pool "io"
+        "sleep" | "sortfile" | "wordcount" | "grep" | "compress" | "hashfile" => Some("io"),
+        _ => None,
+    }
+}
+
 /// GET /metrics
+/// Retorna métricas por comando según el enunciado
 pub fn metrics(state: &Shared, _req: &Request) -> (u16, &'static str, Vec<u8>) {
-    let detailed_metrics = state.metrics.detailed_snapshot();
+    use std::collections::HashMap;
     
-    // Snapshots de colas
+    // Obtener métricas por comando
+    let command_stats = state.metrics.get_all_command_stats();
+    
+    // Snapshots de colas por pool
     let qb = state.pools.basic.snapshot();
     let qc = state.pools.cpu.snapshot();
     let qi = state.pools.io.snapshot();
     
-    // Calcular throughput
+    // Mapear pools a información
+    let pools_info: HashMap<&str, (usize, usize, usize)> = HashMap::from([
+        ("basic", (qb.pending, qb.max_depth, qb.workers)),
+        ("cpu", (qc.pending, qc.max_depth, qc.workers)),
+        ("io", (qi.pending, qi.max_depth, qi.workers)),
+    ]);
+    
+    // Construir JSON por comando según formato del enunciado
+    let mut queues_json = String::new();
+    let mut workers_json = String::new();
+    let mut latency_json = String::new();
+    
+    let mut first_cmd = true;
+    for (cmd, stats) in &command_stats {
+        if !first_cmd {
+            queues_json.push(',');
+            workers_json.push(',');
+            latency_json.push(',');
+        }
+        first_cmd = false;
+        
+        // Obtener información del pool para este comando
+        let pool_name = get_command_pool(cmd).unwrap_or("basic");
+        let (pending, _max_depth, total_workers) = pools_info.get(pool_name)
+            .copied()
+            .unwrap_or((0, 0, 0));
+        
+        // Workers ocupados: estim.init based on pending
+        let busy_workers = if pending > 0 && pending < total_workers {
+            pending
+        } else if pending >= total_workers {
+            total_workers
+        } else {
+            0
+        };
+        
+        // Queues: pending por comando (compartimos la cola del pool)
+        queues_json.push_str(&format!(r#""{}":{}"#, cmd, pending));
+        
+        // Workers: total y busy por comando
+        workers_json.push_str(&format!(
+            r#""{}":{{"total":{},"busy":{}}}"#,
+            cmd, total_workers, busy_workers
+        ));
+        
+        // Latency: p50, p95, p99 por comando (usando exec_ms como latencia principal)
+        latency_json.push_str(&format!(
+            r#""{}":{{"p50":{},"p95":{},"p99":{},"avg_wait_ms":{:.2},"avg_exec_ms":{:.2},"stddev_wait_ms":{:.2},"stddev_exec_ms":{:.2},"count":{}}}"#,
+            cmd,
+            stats.p50_exec_ms, stats.p95_exec_ms, stats.p99_exec_ms,
+            stats.avg_wait_ms, stats.avg_exec_ms,
+            stats.stddev_wait_ms, stats.stddev_exec_ms,
+            stats.count
+        ));
+    }
+    
+    // Calcular throughput global
+    let detailed_metrics = state.metrics.detailed_snapshot();
     let uptime_ms = now_ms_since_epoch() - state.started_ms;
     let requests_per_second = if uptime_ms > 0 { 
         (detailed_metrics.handled * 1000) / uptime_ms as u64 
@@ -394,33 +470,16 @@ pub fn metrics(state: &Shared, _req: &Request) -> (u16, &'static str, Vec<u8>) {
         0 
     };
     
+    // Formato según enunciado: { "queues": {...}, "workers": {...}, "latency_ms": {...} }
     let body = format!(
-        r#"{{"requests":{{"accepted":{},"handled":{},"errors":{}}},"queues":{{"basic":{{"pending":{},"max_depth":{},"workers":{}}},"cpu":{{"pending":{},"max_depth":{},"workers":{}}},"io":{{"pending":{},"max_depth":{},"workers":{}}}}},"workers":{{"basic":{{"total":{},"busy":{}}},"cpu":{{"total":{},"busy":{}}},"io":{{"total":{},"busy":{}}}}},"latency_ms":{{"avg":{:.2},"p50":{},"p95":{},"p99":{},"samples":{}}},"throughput":{{"requests_per_second":{}}},"uptime_ms":{}}}"#,
-        // Requests
+        r#"{{"queues":{{{}}},"workers":{{{}}},"latency_ms":{{{}}},"throughput":{{"requests_per_second":{}}},"requests":{{"accepted":{},"handled":{},"errors":{}}}}}"#,
+        queues_json,
+        workers_json,
+        latency_json,
+        requests_per_second,
         detailed_metrics.accepted,
         detailed_metrics.handled,
-        detailed_metrics.errors,
-        
-        // Queues
-        qb.pending, qb.max_depth, qb.workers,
-        qc.pending, qc.max_depth, qc.workers,
-        qi.pending, qi.max_depth, qi.workers,
-        
-        // Workers (estimación: ocupados si hay trabajo pendiente)
-        qb.workers, if qb.pending > 0 { qb.workers } else { 0 },
-        qc.workers, if qc.pending > 0 { qc.workers } else { 0 },
-        qi.workers, if qi.pending > 0 { qi.workers } else { 0 },
-        
-        // Latencia real
-        detailed_metrics.avg_latency_ms,
-        detailed_metrics.p50_latency_ms,
-        detailed_metrics.p95_latency_ms,
-        detailed_metrics.p99_latency_ms,
-        detailed_metrics.sample_count,
-        
-        // Throughput
-        requests_per_second,
-        uptime_ms
+        detailed_metrics.errors
     );
     
     json_ok(body.into_bytes())

@@ -29,7 +29,7 @@
 
 ## Introducción
 
-Este documento describe la arquitectura, configuración y uso del servidor HTTP/1.0 implementado en Rust para el proyecto del curso Principios de Sistemas Operativos. El servidor demuestra conceptos fundamentales de sistemas operativos incluyendo concurrencia, sincronización, planificación de tareas y manejo de recursos compartidos.
+Este documento describimos la arquitectura, configuración que se implementó y uso del servidor HTTP/1.0 utilizando Rust para el proyecto del curso de SO. El servidor implementa conceptos importantes como concurrencia, sincronización, planificación de tareas y manejo de recursos compartidos.
 
 ### Objetivos del Proyecto
 
@@ -38,7 +38,6 @@ Este documento describe la arquitectura, configuración y uso del servidor HTTP/
 - Implementar pools de workers especializados por tipo de tarea
 - Manejar tareas CPU-bound e IO-bound de forma eficiente
 - Implementar un sistema de jobs con colas persistentes
-- Lograr cobertura de pruebas unitarias superior al 90%
 
 ### Características Principales
 
@@ -70,12 +69,6 @@ Este documento describe la arquitectura, configuración y uso del servidor HTTP/
 - `num-bigint`, `num-integer`, `num-traits` para operaciones matemáticas avanzadas
 - `lazy_static` para inicialización estática
 
-### Herramientas Recomendadas
-
-- **cargo-tarpaulin:** Para análisis de cobertura de código
-- **wrk o Apache Bench:** Para pruebas de carga
-- **curl o httpie:** Para pruebas de endpoints
-- **htop o top:** Para monitoreo de recursos del sistema
 
 ---
 
@@ -98,17 +91,6 @@ Para desarrollo y depuración:
 cargo build
 ```
 
-El binario se generará en `target/debug/proyecto-http.exe` (Windows) o `target/debug/proyecto-http` (Unix).
-
-#### Compilación en Modo Release
-
-Para producción con optimizaciones:
-
-```bash
-cargo build --release
-```
-
-El binario optimizado se generará en `target/release/proyecto-http.exe` (Windows) o `target/release/proyecto-http` (Unix).
 
 ### Ejecutar el Servidor
 
@@ -122,16 +104,6 @@ cargo run
 
 ```bash
 PORT=9090 WORKERS_CPU=8 cargo run
-```
-
-#### Ejecutar Binario Compilado
-
-```bash
-# En Unix/Linux
-./target/release/proyecto-http
-
-# En Windows
-target\release\proyecto-http.exe
 ```
 
 ---
@@ -181,11 +153,10 @@ El servidor implementa una arquitectura multihilo con los siguientes componentes
 ### Componentes de Código
 
 #### `src/main.rs`
-Punto de entrada. Inicializa configuración, router, estado compartido y arranca el listener HTTP.
+Es el punto de entrada que se encarga de nicializar la configuración, router, estado compartido y arranca el listener HTTP.
 
 #### `src/core.rs`
 - Maneja conexiones HTTP entrantes
-- Parseo de requests HTTP/1.0
 - Construcción de responses
 - Estado compartido (AppState) envuelto en Arc
 
@@ -201,12 +172,12 @@ Punto de entrada. Inicializa configuración, router, estado compartido y arranca
 
 #### `src/jobs.rs`
 - Job Manager para tareas asíncronas
-- Persistencia efímera de trabajos
+- Persistencia de timepo limitado de trabajos
 - Estado de jobs (queued/running/done/error)
 
 #### `src/config.rs`
 - Carga de configuración desde variables de entorno
-- Valores por defecto sensatos
+- Valores por defecto (en caso de que no se configuren)
 - Múltiples alias para compatibilidad
 
 #### `src/handlers/`

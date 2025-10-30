@@ -273,24 +273,22 @@ impl JobStore {
 
     /// Intenta cancelar un trabajo
     pub fn cancel(&self, id: &JobId) -> bool {
-        let mut jobs = self.jobs.lock().unwrap();
-        if let Some(job) = jobs.get_mut(id) {
-            match job.status {
-                JobStatus::Queued => {
-                    job.status = JobStatus::Canceled;
-                    job.completed_at = Some(now_ms());
-                    self.persist_job(id);
-                    true
+        let snap = {
+            let mut jobs = self.jobs.lock().unwrap();
+            if let Some(j) = jobs.get_mut(id) {
+                match j.status {
+                    JobStatus::Queued | JobStatus::Running => {
+                        j.status = JobStatus::Canceled;
+                        j.completed_at = Some(now_ms());
+                        Some(j.clone())
+                    }
+                    _ => None,
                 }
-                JobStatus::Running => {
-                    // Marcamos como cancelado; el worker debe verificar periódicamente
-                    job.status = JobStatus::Canceled;
-                    job.completed_at = Some(now_ms());
-                    self.persist_job(id);
-                    true
-                }
-                _ => false, // No se puede cancelar trabajos terminados
-            }
+            } else { None }
+        };
+        if let Some(j) = snap {
+            self.persist_update(&j);
+            true
         } else {
             false
         }
@@ -298,44 +296,57 @@ impl JobStore {
 
     /// Actualiza el progreso de un trabajo
     pub fn update_progress(&self, id: &JobId, progress: u8) {
-        let mut jobs = self.jobs.lock().unwrap();
-        if let Some(job) = jobs.get_mut(id) {
-            job.progress = progress.min(100);
-            self.persist_job(id);
-        }
+        // muta bajo lock → clona snapshot → persiste fuera del lock
+        let snap = {
+            let mut jobs = self.jobs.lock().unwrap();
+            if let Some(j) = jobs.get_mut(id) {
+                j.progress = progress.min(100);
+                Some(j.clone())
+            } else { None }
+        };
+        if let Some(j) = snap { self.persist_update(&j); }
     }
 
     /// Marca un trabajo como iniciado
     pub fn start_job(&self, id: &JobId) {
-        let mut jobs = self.jobs.lock().unwrap();
-        if let Some(job) = jobs.get_mut(id) {
-            job.status = JobStatus::Running;
-            job.started_at = Some(now_ms());
-            self.persist_job(id);
-        }
+        let snap = {
+            let mut jobs = self.jobs.lock().unwrap();
+            if let Some(j) = jobs.get_mut(id) {
+                j.status = JobStatus::Running;
+                j.started_at = Some(now_ms());
+                Some(j.clone())
+            } else { None }
+        };
+        if let Some(j) = snap { self.persist_update(&j); }
     }
 
     /// Marca un trabajo como completado
     pub fn complete_job(&self, id: &JobId, result: String) {
-        let mut jobs = self.jobs.lock().unwrap();
-        if let Some(job) = jobs.get_mut(id) {
-            job.status = JobStatus::Done;
-            job.progress = 100;
-            job.completed_at = Some(now_ms());
-            job.result = Some(result);
-            self.persist_job(id);
-        }
+        let snap = {
+            let mut jobs = self.jobs.lock().unwrap();
+            if let Some(j) = jobs.get_mut(id) {
+                j.status = JobStatus::Done;
+                j.progress = 100;
+                j.completed_at = Some(now_ms());
+                j.result = Some(result);
+                Some(j.clone())
+            } else { None }
+        };
+        if let Some(j) = snap { self.persist_update(&j); }
     }
 
     /// Marca un trabajo como fallido
     pub fn fail_job(&self, id: &JobId, error: String) {
-        let mut jobs = self.jobs.lock().unwrap();
-        if let Some(job) = jobs.get_mut(id) {
-            job.status = JobStatus::Error;
-            job.completed_at = Some(now_ms());
-            job.error = Some(error);
-            self.persist_job(id);
-        }
+        let snap = {
+            let mut jobs = self.jobs.lock().unwrap();
+            if let Some(j) = jobs.get_mut(id) {
+                j.status = JobStatus::Error;
+                j.completed_at = Some(now_ms());
+                j.error = Some(error);
+                Some(j.clone())
+            } else { None }
+        };
+        if let Some(j) = snap { self.persist_update(&j); }
     }
 
     /// Obtiene trabajos pendientes ordenados por prioridad (FIFO por prioridad)

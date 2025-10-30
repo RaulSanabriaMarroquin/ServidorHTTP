@@ -1,7 +1,7 @@
 // src/workers.rs
 use std::sync::{mpsc, Arc, Mutex};
 use std::thread::{self, JoinHandle};
-use std::sync::atomic::{AtomicBool, Ordering};
+use std::sync::atomic::{AtomicBool, Ordering}; 
 
 use crate::core::Shared;
 
@@ -12,7 +12,7 @@ pub type HandlerFn = fn(&Shared, &crate::core::Request) -> (u16, &'static str, V
 /// Tarea que procesa un worker.
 pub type Task = Box<dyn FnOnce() + Send + 'static>;
 
-#[derive(Clone, Debug)]
+#[derive(Clone, Debug, serde::Serialize)]
 pub struct WorkerView {
     pub id: String,
     pub busy: bool,
@@ -60,47 +60,58 @@ impl WorkQueue {
         let mut handles = Vec::with_capacity(workers);
         let mut worker_busy = Vec::with_capacity(workers);
         let mut worker_ids = Vec::with_capacity(workers);
-        
+
         for i in 0..workers {
-    let rx_i = Arc::clone(&rx_arc);
-    let pending_i = Arc::clone(&pending);
+            let rx_i = Arc::clone(&rx_arc);
+            let pending_i = Arc::clone(&pending);
 
-    // NUEVO: id y flag busy de este worker
-    let wid = format!("{}-w{}", name, i);
-    let busy_flag = Arc::new(AtomicBool::new(false));
-    let busy_flag_thread = Arc::clone(&busy_flag);
+            // id y flag busy de este worker
+            let wid = format!("{}-w{}", name, i);
+            let busy_flag = Arc::new(AtomicBool::new(false));
+            let busy_flag_thread = Arc::clone(&busy_flag);
+            let wid_for_thread = wid.clone();
 
-    let h = thread::spawn(move || {
-        loop {
-            let task = {
-                let lock = rx_i.lock().expect("rx poisoned");
-                lock.recv()
-            };
-            match task {
-                Ok(job) => {
-                    // marcar ocupado
-                    busy_flag_thread.store(true, Ordering::SeqCst);
-                    job();
-                    // desocupar
-                    busy_flag_thread.store(false, Ordering::SeqCst);
+            let h = std::thread::Builder::new().name(wid.clone()).spawn(move || {
+                loop {
+                    let task = {
+                        let lock = rx_i.lock().expect("rx poisoned");
+                        lock.recv()
+                    };
+                    match task {
+                        Ok(job) => {
+                            // marcar ocupado
+                            busy_flag_thread.store(true, Ordering::SeqCst);
 
-                    if let Ok(mut p) = pending_i.lock() {
-                        *p = p.saturating_sub(1);
+                            // Ejecutar blindado contra panic
+                            let res = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
+                                job();
+                            }));
+
+                            // desocupar (siempre)
+                            busy_flag_thread.store(false, Ordering::SeqCst);
+                            if let Ok(mut p) = pending_i.lock() {
+                                *p = p.saturating_sub(1);
+                            }
+
+                            if let Err(e) = res {
+                                eprintln!("[worker {}] handler panicked: {:?}", wid_for_thread, e);
+                                // El hilo sigue vivo.
+                            }
+                        }
+                        Err(_) => {
+                            // Canal cerrado → fin worker
+                            eprintln!("[worker {}] channel closed; exiting", wid_for_thread);
+                            break;
+                        }
                     }
                 }
-                Err(_) => {
-                    // Canal cerrado → fin worker
-                    break;
-                }
-            }
-        }
-    });
+            }).expect("spawn worker");
 
-        // IMPORTANTE: registrar id y flag en los vectores
-        worker_ids.push(wid);
-        worker_busy.push(busy_flag);
-        handles.push(h);
-    }
+            // Registrar id y flag en los vectores
+            worker_ids.push(wid);
+            worker_busy.push(busy_flag);
+            handles.push(h);
+        }
 
         Self {
             name,

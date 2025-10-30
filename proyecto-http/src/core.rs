@@ -20,6 +20,7 @@ use std::io::{Read, Write};
 use std::net::{TcpListener, TcpStream};
 use std::sync::Arc;
 use std::thread;
+use std::time::Duration;
 
 use crate::config::Config;
 use crate::metrics::Metrics; // Arc<Mutex<...>> por dentro
@@ -48,6 +49,8 @@ pub struct AppState {
     pub job_store: Arc<JobStore>, // sistema de jobs
 }
 
+
+
 /// Alias práctico: `Shared` es un `Arc<AppState>`.
 pub type Shared = Arc<AppState>;
 
@@ -59,6 +62,40 @@ pub fn now_ms_since_epoch() -> u128 {
         .unwrap()
         .as_millis()
 }
+
+#[derive(Debug)]
+pub enum ApiError {
+    BadRequest(&'static str, String),
+    NotFound(&'static str, String),
+    Conflict(&'static str, String),
+    TooMany(&'static str, String),
+    Internal(&'static str, String),
+    Unavailable(&'static str, String, Option<Duration>),
+}
+
+fn json_err(kind: &str, message: &str, extra: Option<&str>) -> Vec<u8> {
+    match extra {
+        Some(e) => format!(r#"{{"error":{{"code":"{}","message":"{}","extra":{}}}}}"#, kind, message, e).into_bytes(),
+        None    => format!(r#"{{"error":{{"code":"{}","message":"{}"}}}}"#, kind, message).into_bytes(),
+    }
+}
+
+/// Convierte ApiError en tu triple HTTP (status, content_type, body) y Retry-After (opcional)
+pub fn error_into_http(err: ApiError) -> (u16, &'static str, Vec<u8>, Option<u64>) {
+    match err {
+        ApiError::BadRequest(_, msg) => (400, "application/json", json_err("bad_request", &msg, None), None),
+        ApiError::NotFound(_, msg)   => (404, "application/json", json_err("not_found", &msg, None), None),
+        ApiError::Conflict(_, msg)   => (409, "application/json", json_err("conflict", &msg, None), None),
+        ApiError::TooMany(_, msg)    => (429, "application/json", json_err("too_many_requests", &msg, None), None),
+        ApiError::Internal(_, msg)   => (500, "application/json", json_err("internal_error", &msg, None), None),
+        ApiError::Unavailable(_, msg, retry) => {
+            let extra = retry.map(|d| format!(r#"{{"retry_after_ms": {}}}"#, d.as_millis()))
+                              .unwrap_or_else(|| "null".to_string());
+            (503, "application/json", json_err("service_unavailable", &msg, Some(&extra)), retry.map(|d| (d.as_secs() as u64).max(1)))
+        }
+    }
+}
+
 
 impl AppState {
     /// Construcción en DOS PASOS porque `Pools::new(&Shared)` necesita el Shared ya creado:
@@ -233,9 +270,11 @@ fn enqueue_on_pool(
     // Registrar t_enqueue (momento en que se encola)
     let t_enqueue = now_ms_since_epoch();
 
+    eprintln!("[enqueue] {} -> {}", req.request_id, cmd_name);
     match pool.submit(Box::new(move || {
         // Registrar t_start (momento en que worker toma la tarea)
         let t_start = now_ms_since_epoch();
+        eprintln!("[worker] start {} cmd={}", req_cloned.request_id, cmd_name);
         let wait_ms = (t_start - t_enqueue) as u64;
         
         // Ejecutar handler
@@ -275,12 +314,14 @@ fn enqueue_on_pool(
                 r#"{{"error":"backpressure","queue":"{}","retry_after_ms":{}}}"#,
                 queue, retry_after_ms
             );
-            write_response(
+            let retry_secs = (retry_after_ms / 1000).max(1);
+            write_response_with_retry_after(
                 stream,
                 503,
                 "Service Unavailable",
                 &req.request_id,
                 body.as_bytes(),
+                Some(retry_secs),
             )
         }
     }
@@ -295,18 +336,68 @@ fn write_response(
     req_id: &str,
     body: &[u8],
 ) -> std::io::Result<()> {
+    use std::net::Shutdown;
+    let thread = std::thread::current();
+    let worker_id: String = thread.name().unwrap_or("main").to_string();
+    let worker_pid = std::process::id();
+
     let headers = format!(
         "HTTP/1.0 {} {}\r\n\
          Content-Type: application/json\r\n\
          Content-Length: {}\r\n\
          X-Request-Id: {}\r\n\
+         X-Worker-Pid: {}\r\n\
+         X-Worker-Id: {}\r\n\
+         Connection: close\r\n\
          \r\n",
         status,
         reason,
         body.len(),
-        req_id
+        req_id,
+        worker_pid,
+        worker_id
     );
+
     stream.write_all(headers.as_bytes())?;
+    stream.write_all(body)?;
+    stream.flush()?;
+
+    // En Windows, esto ayuda a que curl no se quede esperando
+    let _ = stream.shutdown(Shutdown::Write);
+
+    Ok(())
+}
+
+/// Variante con Retry-After opcional (sólo la usamos para 503 de backpressure).
+fn write_response_with_retry_after(
+    stream: &mut TcpStream,
+    status: u16,
+    reason: &str,
+    req_id: &str,
+    body: &[u8],
+    retry_after_secs: Option<u64>,
+) -> std::io::Result<()> {
+    let thread = std::thread::current();
+    let worker_id: String = thread.name().unwrap_or("main").to_string();
+    let worker_pid = std::process::id();
+    let base = format!(
+        "HTTP/1.0 {} {}\r\n\
+         Content-Type: application/json\r\n\
+         Content-Length: {}\r\n\
+         X-Request-Id: {}\r\n\
+         X-Worker-Pid: {}\r\n\
+         X-Worker-Id: {}\r\n",
+        status, reason, body.len(), req_id, worker_pid, worker_id
+    );
+    let extra = if let Some(s) = retry_after_secs {
+        format!("Retry-After: {}\r\n", s.max(1))
+    } else {
+        String::new()
+    };
+    let end = "\r\n";
+    stream.write_all(base.as_bytes())?;
+    stream.write_all(extra.as_bytes())?;
+    stream.write_all(end.as_bytes())?;
     stream.write_all(body)?;
     stream.flush()?;
     Ok(())

@@ -6,6 +6,7 @@
 
 use crate::core::{now_ms_since_epoch, Request, Shared};
 use std::collections::HashMap;
+use serde_json::json;
 
 fn json_ok(bytes: Vec<u8>) -> (u16, &'static str, Vec<u8>) {
     (200, "application/json", bytes)
@@ -25,122 +26,145 @@ fn not_found_json(path: &str) -> (u16, &'static str, Vec<u8>) {
     )
 }
 
-    // Lista canónica para /status por comando (ajústala a tus endpoints reales)
-const COMMANDS_FOR_STATUS: &[&str] = &[
-        // básicos
-        "status","timestamp","reverse","toupper","random","hash",
-        "createfile","deletefile","metrics",
-        // cpu
-        "fibonacci","isprime","factor","pi","mandelbrot","matrixmul",
-        // io
-        "sleep","sortfile","wordcount","grep","compress","hashfile",
-    ];
+/// GET /simulate?seconds=s&task=name
+/// Simula trabajo real durante ~s segundos realizando cómputo (hashes) para no bloquear
+/// con sleep puro. Limita el máximo a 15s.
+pub fn simulate(_state: &Shared, req: &Request) -> (u16, &'static str, Vec<u8>) {
+    let default_seconds = "1".to_string();
+    let seconds_str = req.query.get("seconds").unwrap_or(&default_seconds);
+    let task_name = req.query.get("task").cloned().unwrap_or_else(|| "cpu_hash".to_string());
+
+    let seconds: u64 = match seconds_str.parse::<u64>() {
+        Ok(s) if s > 0 => s.min(15),
+        _ => return bad_request("Parameter 'seconds' must be a positive integer"),
+    };
+
+    // Trabajo real: calcular hashes sobre un buffer para ~seconds segundos
+    let start = now_ms_since_epoch();
+    let deadline = start + (seconds as u128) * 1000;
+    let mut iterations: u64 = 0;
+    let mut bytes_processed: u64 = 0;
+
+    // Buffer determinístico pequeño para no consumir memoria en exceso
+    let mut data = vec![0u8; 64 * 1024]; // 64KiB
+    for i in 0..data.len() {
+        data[i] = (i as u8).wrapping_mul(31);
+    }
+
+    use sha2::{Digest, Sha256};
+    while now_ms_since_epoch() < deadline {
+        let mut hasher = Sha256::new();
+        hasher.update(&data);
+        let _ = hasher.finalize();
+        iterations += 1;
+        bytes_processed += data.len() as u64;
+    }
+
+    let elapsed = now_ms_since_epoch() - start;
+    let body = format!(
+        r#"{{"task":"{}","seconds_requested":{},"elapsed_ms":{},"iterations":{},"bytes_processed":{}}}"#,
+        task_name, seconds, elapsed, iterations, bytes_processed
+    );
+    json_ok(body.into_bytes())
+}
+
+/// GET /loadtest?tasks=n&sleep=ms
+/// Lanza `n` tareas ligeras en paralelo que duermen `sleep` milisegundos cada una.
+/// Devuelve tiempo total y throughput aproximado. Limita n a 2000 y sleep a 15000ms.
+pub fn loadtest(_state: &Shared, req: &Request) -> (u16, &'static str, Vec<u8>) {
+    let default_tasks = "10".to_string();
+    let default_sleep = "10".to_string();
+
+    let tasks_s = req.query.get("tasks").unwrap_or(&default_tasks);
+    let sleep_s = req.query.get("sleep").unwrap_or(&default_sleep);
+
+    let tasks: usize = match tasks_s.parse::<usize>() {
+        Ok(v) if v > 0 => v.min(2000),
+        _ => return bad_request("Parameter 'tasks' must be a positive integer"),
+    };
+    let sleep_ms: u64 = match sleep_s.parse::<u64>() {
+        Ok(v) => v.min(15000),
+        _ => return bad_request("Parameter 'sleep' must be a non-negative integer"),
+    };
+
+    let start = now_ms_since_epoch();
+
+    let mut handles = Vec::with_capacity(tasks);
+    for _ in 0..tasks {
+        handles.push(std::thread::spawn({
+            let dur = std::time::Duration::from_millis(sleep_ms);
+            move || {
+                std::thread::sleep(dur);
+            }
+        }));
+    }
+    for h in handles {
+        let _ = h.join();
+    }
+
+    let elapsed = now_ms_since_epoch() - start;
+    let throughput = if elapsed > 0 { (tasks as u128 * 1000) / elapsed } else { 0 };
+
+    let body = format!(
+        r#"{{"tasks":{},"sleep_ms":{},"elapsed_ms":{},"throughput_tps":{}}}"#,
+        tasks, sleep_ms, elapsed, throughput
+    );
+    json_ok(body.into_bytes())
+}
 
 /// GET /status
 pub fn status(state: &Shared, _req: &Request) -> (u16, &'static str, Vec<u8>) {
     let (accepted, handled) = state.metrics.snapshot();
-
-
 
     // NUEVO: snapshots de colas
     let qb = state.pools.basic.snapshot();
     let qc = state.pools.cpu.snapshot();
     let qi = state.pools.io.snapshot();
 
-    // workers reales por pool
-    let wb = state.pools.basic.worker_views();
-    let wc = state.pools.cpu.worker_views();
-    let wi = state.pools.io.worker_views();
+    // NUEVO: detalle de workers por pool (id/busy)
+    let workers_detail = json!({
+        "basic": state.pools.basic.worker_views(),
+        "cpu":   state.pools.cpu.worker_views(),
+        "io":    state.pools.io.worker_views(),
+    });
 
-     // Construimos una lista JSON de objetos por comando
-    // workers: [{id,busy}], summary:{total,busy}, queue_size, max_depth
-    // Nota: como los comandos comparten pool, verán los mismos workers del pool mapeado
-    let mut commands_json = String::new();
-    let mut first = true;
-    for cmd in COMMANDS_FOR_STATUS {
-        let (pool_name, qpend, qmax, wviews) = match get_command_pool(cmd) {
-            Some("basic") => ("basic", qb.pending, qb.max_depth, &wb),
-            Some("cpu")   => ("cpu",   qc.pending, qc.max_depth, &wc),
-            Some("io")    => ("io",    qi.pending, qi.max_depth, &wi),
-            _             => ("basic", qb.pending, qb.max_depth, &wb),
-        };
 
-        // summary
-        let total = wviews.len();
-        let busy  = wviews.iter().filter(|w| w.busy).count();
-
-        // workers array
-        let mut ws = String::new();
-        let mut fw = true;
-        for w in wviews.iter() {
-            if !fw { ws.push(','); }
-            fw = false;
-            ws.push_str(&format!(r#"{{"id":"{}","busy":{}}}"#, w.id, if w.busy { "true" } else { "false" }));
-        }
-
-        if !first { commands_json.push(','); }
-        first = false;
-        commands_json.push_str(&format!(
-                r#"{{
-    "command":"{cmd}",
-    "pool":"{pool}",
-    "workers":[{ws}],
-    "summary":{{"total":{total},"busy":{busy}}},
-    "queue_size":{qpend},
-    "max_depth":{qmax}
-    }}"#,
-                cmd = cmd,
-                pool = pool_name,
-                ws = ws,
-                total = total,
-                busy = busy,
-                qpend = qpend,
-                qmax = qmax
-            ));
-        }
-
-        let body = format!(
-            r#"{{
-    "status":"ok",
-    "port":{port},
-    "pid":{pid},
-    "uptime_ms":{uptime},
-    "metrics":{{"accepted":{acc},"handled":{hdl}}},
-
-    "queues":[
-        {{"name":"{qb_name}","pending":{qb_pending},"max_depth":{qb_max},"workers":{qb_workers}}},
-        {{"name":"{qc_name}","pending":{qc_pending},"max_depth":{qc_max},"workers":{qc_workers}}},
+    let body = format!(
+        r#"{{
+  "status":"ok",
+  "port":{port},
+  "pid":{pid},
+  "uptime_ms":{uptime},
+  "metrics":{{"accepted":{acc},"handled":{hdl}}},
+  "workers_detail": {workers_detail},
+  "queues":[
+    {{"name":"{qb_name}","pending":{qb_pending},"max_depth":{qb_max},"workers":{qb_workers}}},
+    {{"name":"{qc_name}","pending":{qc_pending},"max_depth":{qc_max},"workers":{qc_workers}}},
         {{"name":"{qi_name}","pending":{qi_pending},"max_depth":{qi_max},"workers":{qi_workers}}}
-    ],
+  ],
+  "config":{{
+    "workers":{{"basic":{w_basic},"cpu":{w_cpu},"io":{w_io}}}, 
+    "queues":{{"basic":{q_basic},"cpu":{q_cpu},"io":{q_io}}},
+    "timeouts_ms":{{"cpu":{t_cpu},"io":{t_io}}}
+  }}
+}}"#,
+        port = state.cfg.port,
+        pid = std::process::id(),
+        uptime = now_ms_since_epoch().saturating_sub(state.started_ms),
+        acc = accepted,
+        hdl = handled,
 
-    "by_command":[
-        {commands}
-    ],
+        qb_name = qb.name, qb_pending = qb.pending, qb_max = qb.max_depth, qb_workers = qb.workers,
+        qc_name = qc.name, qc_pending = qc.pending, qc_max = qc.max_depth, qc_workers = qc.workers,
+        qi_name = qi.name, qi_pending = qi.pending, qi_max = qi.max_depth, qi_workers = qi.workers,
 
-    "config":{{
-        "workers":{{"basic":{w_basic},"cpu":{w_cpu},"io":{w_io}}},
-        "queues":{{"basic":{q_basic},"cpu":{q_cpu},"io":{q_io}}},
-        "timeouts_ms":{{"cpu":{t_cpu},"io":{t_io}}}
-    }}
-    }}"#,
-            port = state.cfg.port,
-            pid = std::process::id(),
-            uptime = now_ms_since_epoch().saturating_sub(state.started_ms),
-            acc = accepted,
-            hdl = handled,
+        w_basic = state.cfg.workers_basic, w_cpu = state.cfg.workers_cpu, w_io = state.cfg.workers_io,
+        q_basic = state.cfg.queue_basic,   q_cpu = state.cfg.queue_cpu,   q_io = state.cfg.queue_io,
+        t_cpu   = state.cfg.timeout_cpu_ms, t_io = state.cfg.timeout_io_ms,
+        workers_detail = workers_detail.to_string(),
+    );
 
-            qb_name = qb.name, qb_pending = qb.pending, qb_max = qb.max_depth, qb_workers = wb.len(),
-            qc_name = qc.name, qc_pending = qc.pending, qc_max = qc.max_depth, qc_workers = wc.len(),
-            qi_name = qi.name, qi_pending = qi.pending, qi_max = qi.max_depth, qi_workers = wi.len(),
-
-            commands = commands_json,
-
-            w_basic = state.cfg.workers_basic, w_cpu = state.cfg.workers_cpu, w_io = state.cfg.workers_io,
-            q_basic = state.cfg.queue_basic,   q_cpu = state.cfg.queue_cpu,   q_io = state.cfg.queue_io,
-            t_cpu   = state.cfg.timeout_cpu_ms, t_io = state.cfg.timeout_io_ms
-        );
-
-        (200, "application/json", body.into_bytes())
+    json_ok(body.into_bytes())
 }
 /// GET /timestamp
 pub fn timestamp(_state: &Shared, _req: &Request) -> (u16, &'static str, Vec<u8>) {
@@ -657,8 +681,8 @@ pub fn sleep(_state: &Shared, req: &Request) -> (u16, &'static str, Vec<u8>) {
     (None, Some(ms_str)) => ms_str.parse::<u64>().unwrap_or(1000),
     _ => 1000
     };
-    if ms > 5000 {
-        return bad_request("ms too large (max 5000)");
+    if ms > 15000 {
+        return bad_request("ms too large (max 15000)");
     }
     std::thread::sleep(std::time::Duration::from_millis(ms));
     json_ok(

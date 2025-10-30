@@ -7,6 +7,8 @@ use crate::core::{Request, Shared};
 use crate::jobs::{JobId, Priority};
 use std::collections::HashMap;
 
+
+
 fn json_ok(bytes: Vec<u8>) -> (u16, &'static str, Vec<u8>) {
     (200, "application/json", bytes)
 }
@@ -116,13 +118,34 @@ pub fn submit(state: &Shared, req: &Request) -> (u16, &'static str, Vec<u8>) {
 
 /// GET /jobs/status?id=JOBID
 pub fn status(state: &Shared, req: &Request) -> (u16, &'static str, Vec<u8>) {
-    let id = match req.query.get("id") { Some(x) => JobId(x.clone()), None => return bad_request("Parameter 'id' is required") };
+     eprintln!("[jobs/status] req_id={} query={:?}", req.request_id, req.query);
+
+    let id = match req.query.get("id") {
+        Some(x) if !x.is_empty() => JobId(x.clone()),
+        _ => return (
+            400, "application/json",
+            br#"{"error":"bad_request","detail":"Parameter 'id' is required"}"#.to_vec()
+        ),
+    };
+
     match state.job_store.status(&id) {
         Some(view) => {
-            let b = format!(r#"{{"job_id":"{}","status":"{}","progress":{},"eta_ms":{}}}"#, id.0, view.status, view.progress, view.eta_ms);
-            json_ok(b.into_bytes())
+            // Construye JSON seguro sin format strings
+            let body = serde_json::json!({
+                "job_id": id.0,
+                "status": view.status.to_string(),  // usa tu impl Display de JobStatus
+                "progress": view.progress,
+                "eta_ms": view.eta_ms
+            });
+            (200, "application/json", body.to_string().into_bytes())
         }
-        None => not_found(&format!("Job '{}' not found", id.0)),
+        None => {
+            let body = serde_json::json!({
+                "error": "not_found",
+                "detail": format!("Job '{}' not found", id.0)
+            });
+            (404, "application/json", body.to_string().into_bytes())
+        }
     }
 }
 

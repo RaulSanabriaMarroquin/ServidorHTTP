@@ -1,6 +1,7 @@
 // src/workers.rs
 use std::sync::{mpsc, Arc, Mutex};
 use std::thread::{self, JoinHandle};
+use std::sync::atomic::{AtomicBool, Ordering};
 
 use crate::core::Shared;
 
@@ -10,6 +11,13 @@ pub type HandlerFn = fn(&Shared, &crate::core::Request) -> (u16, &'static str, V
 
 /// Tarea que procesa un worker.
 pub type Task = Box<dyn FnOnce() + Send + 'static>;
+
+#[derive(Clone, Debug)]
+pub struct WorkerView {
+    pub id: String,
+    pub busy: bool,
+}
+
 
 /// Error 503 por presión de cola.
 #[derive(Debug)]
@@ -37,6 +45,9 @@ pub struct WorkQueue {
     pending: Arc<Mutex<usize>>,
     pub max_depth: usize,
     pub workers: Vec<JoinHandle<()>>,
+    // NUEVO: estado por worker
+    worker_busy: Vec<Arc<AtomicBool>>,
+    worker_ids: Vec<String>,
 }
 
 impl WorkQueue {
@@ -47,37 +58,49 @@ impl WorkQueue {
         let pending = Arc::new(Mutex::new(0usize));
 
         let mut handles = Vec::with_capacity(workers);
-        for _id in 0..workers {
-            let rx_i = Arc::clone(&rx_arc);
-            // cada job decrementará pending al terminar
-            let pending_i = Arc::clone(&pending);
+        let mut worker_busy = Vec::with_capacity(workers);
+        let mut worker_ids = Vec::with_capacity(workers);
+        
+        for i in 0..workers {
+    let rx_i = Arc::clone(&rx_arc);
+    let pending_i = Arc::clone(&pending);
 
-            let h = thread::spawn(move || {
-                loop {
-                    // bloquea hasta tener trabajo
-                    let task = {
-                        let lock = rx_i.lock().expect("rx poisoned");
-                        lock.recv()
-                    };
-                    match task {
-                        Ok(job) => {
-                            // Ejecutar el trabajo
-                            job();
-                            // al terminar, --pending
-                            if let Ok(mut p) = pending_i.lock() {
-                                // saturating_sub por seguridad
-                                *p = p.saturating_sub(1);
-                            }
-                        }
-                        Err(_) => {
-                            // Canal cerrado → fin worker
-                            break;
-                        }
+    // NUEVO: id y flag busy de este worker
+    let wid = format!("{}-w{}", name, i);
+    let busy_flag = Arc::new(AtomicBool::new(false));
+    let busy_flag_thread = Arc::clone(&busy_flag);
+
+    let h = thread::spawn(move || {
+        loop {
+            let task = {
+                let lock = rx_i.lock().expect("rx poisoned");
+                lock.recv()
+            };
+            match task {
+                Ok(job) => {
+                    // marcar ocupado
+                    busy_flag_thread.store(true, Ordering::SeqCst);
+                    job();
+                    // desocupar
+                    busy_flag_thread.store(false, Ordering::SeqCst);
+
+                    if let Ok(mut p) = pending_i.lock() {
+                        *p = p.saturating_sub(1);
                     }
                 }
-            });
-            handles.push(h);
+                Err(_) => {
+                    // Canal cerrado → fin worker
+                    break;
+                }
+            }
         }
+    });
+
+        // IMPORTANTE: registrar id y flag en los vectores
+        worker_ids.push(wid);
+        worker_busy.push(busy_flag);
+        handles.push(h);
+    }
 
         Self {
             name,
@@ -86,6 +109,8 @@ impl WorkQueue {
             pending,
             max_depth,
             workers: handles,
+            worker_busy,
+            worker_ids,
         }
     }
 
@@ -134,6 +159,18 @@ impl WorkQueue {
             max_depth: self.max_depth,
             workers: self.workers.len(),
         }
+    }
+    /// NUEVO: vista de workers (id, busy)
+    pub fn worker_views(&self) -> Vec<WorkerView> {
+        let mut out = Vec::with_capacity(self.worker_ids.len());
+        for (i, wid) in self.worker_ids.iter().enumerate() {
+            let busy = self.worker_busy[i].load(Ordering::SeqCst);
+            out.push(WorkerView {
+                id: wid.clone(),
+                busy,
+            });
+        }
+        out
     }
 }
 

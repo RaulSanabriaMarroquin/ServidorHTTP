@@ -25,49 +25,122 @@ fn not_found_json(path: &str) -> (u16, &'static str, Vec<u8>) {
     )
 }
 
+    // Lista canónica para /status por comando (ajústala a tus endpoints reales)
+const COMMANDS_FOR_STATUS: &[&str] = &[
+        // básicos
+        "status","timestamp","reverse","toupper","random","hash",
+        "createfile","deletefile","metrics",
+        // cpu
+        "fibonacci","isprime","factor","pi","mandelbrot","matrixmul",
+        // io
+        "sleep","sortfile","wordcount","grep","compress","hashfile",
+    ];
+
 /// GET /status
 pub fn status(state: &Shared, _req: &Request) -> (u16, &'static str, Vec<u8>) {
     let (accepted, handled) = state.metrics.snapshot();
+
+
 
     // NUEVO: snapshots de colas
     let qb = state.pools.basic.snapshot();
     let qc = state.pools.cpu.snapshot();
     let qi = state.pools.io.snapshot();
 
-    let body = format!(
-        r#"{{
-  "status":"ok",
-  "port":{port},
-  "pid":{pid},
-  "uptime_ms":{uptime},
-  "metrics":{{"accepted":{acc},"handled":{hdl}}},
-  "queues":[
-    {{"name":"{qb_name}","pending":{qb_pending},"max_depth":{qb_max},"workers":{qb_workers}}},
-    {{"name":"{qc_name}","pending":{qc_pending},"max_depth":{qc_max},"workers":{qc_workers}}},
+    // workers reales por pool
+    let wb = state.pools.basic.worker_views();
+    let wc = state.pools.cpu.worker_views();
+    let wi = state.pools.io.worker_views();
+
+     // Construimos una lista JSON de objetos por comando
+    // workers: [{id,busy}], summary:{total,busy}, queue_size, max_depth
+    // Nota: como los comandos comparten pool, verán los mismos workers del pool mapeado
+    let mut commands_json = String::new();
+    let mut first = true;
+    for cmd in COMMANDS_FOR_STATUS {
+        let (pool_name, qpend, qmax, wviews) = match get_command_pool(cmd) {
+            Some("basic") => ("basic", qb.pending, qb.max_depth, &wb),
+            Some("cpu")   => ("cpu",   qc.pending, qc.max_depth, &wc),
+            Some("io")    => ("io",    qi.pending, qi.max_depth, &wi),
+            _             => ("basic", qb.pending, qb.max_depth, &wb),
+        };
+
+        // summary
+        let total = wviews.len();
+        let busy  = wviews.iter().filter(|w| w.busy).count();
+
+        // workers array
+        let mut ws = String::new();
+        let mut fw = true;
+        for w in wviews.iter() {
+            if !fw { ws.push(','); }
+            fw = false;
+            ws.push_str(&format!(r#"{{"id":"{}","busy":{}}}"#, w.id, if w.busy { "true" } else { "false" }));
+        }
+
+        if !first { commands_json.push(','); }
+        first = false;
+        commands_json.push_str(&format!(
+                r#"{{
+    "command":"{cmd}",
+    "pool":"{pool}",
+    "workers":[{ws}],
+    "summary":{{"total":{total},"busy":{busy}}},
+    "queue_size":{qpend},
+    "max_depth":{qmax}
+    }}"#,
+                cmd = cmd,
+                pool = pool_name,
+                ws = ws,
+                total = total,
+                busy = busy,
+                qpend = qpend,
+                qmax = qmax
+            ));
+        }
+
+        let body = format!(
+            r#"{{
+    "status":"ok",
+    "port":{port},
+    "pid":{pid},
+    "uptime_ms":{uptime},
+    "metrics":{{"accepted":{acc},"handled":{hdl}}},
+
+    "queues":[
+        {{"name":"{qb_name}","pending":{qb_pending},"max_depth":{qb_max},"workers":{qb_workers}}},
+        {{"name":"{qc_name}","pending":{qc_pending},"max_depth":{qc_max},"workers":{qc_workers}}},
         {{"name":"{qi_name}","pending":{qi_pending},"max_depth":{qi_max},"workers":{qi_workers}}}
-  ],
-  "config":{{
-    "workers":{{"basic":{w_basic},"cpu":{w_cpu},"io":{w_io}}}, 
-    "queues":{{"basic":{q_basic},"cpu":{q_cpu},"io":{q_io}}},
-    "timeouts_ms":{{"cpu":{t_cpu},"io":{t_io}}}
-  }}
-}}"#,
-        port = state.cfg.port,
-        pid = std::process::id(),
-        uptime = now_ms_since_epoch().saturating_sub(state.started_ms),
-        acc = accepted,
-        hdl = handled,
+    ],
 
-        qb_name = qb.name, qb_pending = qb.pending, qb_max = qb.max_depth, qb_workers = qb.workers,
-        qc_name = qc.name, qc_pending = qc.pending, qc_max = qc.max_depth, qc_workers = qc.workers,
-        qi_name = qi.name, qi_pending = qi.pending, qi_max = qi.max_depth, qi_workers = qi.workers,
+    "by_command":[
+        {commands}
+    ],
 
-        w_basic = state.cfg.workers_basic, w_cpu = state.cfg.workers_cpu, w_io = state.cfg.workers_io,
-        q_basic = state.cfg.queue_basic,   q_cpu = state.cfg.queue_cpu,   q_io = state.cfg.queue_io,
-        t_cpu   = state.cfg.timeout_cpu_ms, t_io = state.cfg.timeout_io_ms
-    );
+    "config":{{
+        "workers":{{"basic":{w_basic},"cpu":{w_cpu},"io":{w_io}}},
+        "queues":{{"basic":{q_basic},"cpu":{q_cpu},"io":{q_io}}},
+        "timeouts_ms":{{"cpu":{t_cpu},"io":{t_io}}}
+    }}
+    }}"#,
+            port = state.cfg.port,
+            pid = std::process::id(),
+            uptime = now_ms_since_epoch().saturating_sub(state.started_ms),
+            acc = accepted,
+            hdl = handled,
 
-    json_ok(body.into_bytes())
+            qb_name = qb.name, qb_pending = qb.pending, qb_max = qb.max_depth, qb_workers = wb.len(),
+            qc_name = qc.name, qc_pending = qc.pending, qc_max = qc.max_depth, qc_workers = wc.len(),
+            qi_name = qi.name, qi_pending = qi.pending, qi_max = qi.max_depth, qi_workers = wi.len(),
+
+            commands = commands_json,
+
+            w_basic = state.cfg.workers_basic, w_cpu = state.cfg.workers_cpu, w_io = state.cfg.workers_io,
+            q_basic = state.cfg.queue_basic,   q_cpu = state.cfg.queue_cpu,   q_io = state.cfg.queue_io,
+            t_cpu   = state.cfg.timeout_cpu_ms, t_io = state.cfg.timeout_io_ms
+        );
+
+        (200, "application/json", body.into_bytes())
 }
 /// GET /timestamp
 pub fn timestamp(_state: &Shared, _req: &Request) -> (u16, &'static str, Vec<u8>) {

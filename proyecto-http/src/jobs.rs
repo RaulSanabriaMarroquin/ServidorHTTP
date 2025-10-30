@@ -17,6 +17,7 @@ use std::thread;
 use std::time::Duration;
 use std::sync::mpsc;
 use crate::core::{Shared, Request,AppState};
+use crate::handlers::{cpu as cpu_handlers, io as io_handlers};
 
 /// Estados posibles de un trabajo
 #[derive(Debug, Clone, Copy, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
@@ -191,7 +192,6 @@ impl JobStore {
     fn timeout_io_ms(&self) -> u64 {
         read_cfg_u64("TIMEOUT_IO_MS", 30000)
     }
-
 }
 
 // función libre para leer configuración
@@ -482,131 +482,181 @@ fn now_ms() -> u128 {
 
 /// Ejecuta un trabajo según su tipo
 pub fn execute_job(job: &Job, state: &Shared) -> String {
-    let to_json = |code: u16, body: Vec<u8>, fallback: &str| {
-        if code == 200 {
-            String::from_utf8(body).unwrap_or_else(|_| fallback.into())
-        } else {
-            fallback.into()
-        }
-    };
-
     match job.task.as_str() {
-        // ---------------- CPU ----------------
+        // -------- CPU --------
         "isprime" => {
-            let mut q = std::collections::HashMap::new();
-            if let Some(n) = job.params.get("n") { q.insert("n".into(), n.clone()); }
-            if let Some(m) = job.params.get("method") { q.insert("method".into(), m.clone()); }
-            let (c, _t, b) = crate::handlers::cpu::isprime(state, &Request{
-                method:"GET".into(), path:"/isprime".into(), query:q,
-                http_version:"HTTP/1.0".into(), request_id:"job".into()
-            });
-            to_json(c, b, r#"{"error":"isprime_failed"}"#)
+            if let Some(n_str) = job.params.get("n") {
+                if let Ok(n) = n_str.parse::<u64>() {
+                    let is_prime = is_prime_number(n);
+                    serde_json::json!({
+                        "n": n,
+                        "is_prime": is_prime,
+                        "method": "division"
+                    }).to_string()
+                } else {
+                    r#"{"error":"invalid_parameter"}"#.to_string()
+                }
+            } else {
+                r#"{"error":"missing_parameter"}"#.to_string()
+            }
         }
         "fibonacci" => {
-            let mut q = std::collections::HashMap::new();
-            if let Some(n)=job.params.get("n"){ q.insert("n".into(), n.clone()); }
-            let (c,_t,b)=crate::handlers::basic::fibonacci(state, &Request{
-                method:"GET".into(), path:"/fibonacci".into(), query:q,
-                http_version:"HTTP/1.0".into(), request_id:"job".into()
-            });
-            to_json(c,b,r#"{"error":"fibonacci_failed"}"#)
+            if let Some(n_str) = job.params.get("n") {
+                if let Ok(n) = n_str.parse::<u32>() {
+                    if let Some(result) = fibonacci_calc(n) {
+                        serde_json::json!({
+                            "n": n,
+                            "fibonacci": result
+                        }).to_string()
+                    } else {
+                        r#"{"error":"calculation_error"}"#.to_string()
+                    }
+                } else {
+                    r#"{"error":"invalid_parameter"}"#.to_string()
+                }
+            } else {
+                r#"{"error":"missing_parameter"}"#.to_string()
+            }
         }
         "factor" => {
-            let mut q=std::collections::HashMap::new();
-            if let Some(n)=job.params.get("n"){ q.insert("n".into(), n.clone()); }
-            let (c,_t,b)=crate::handlers::cpu::factor(state, &Request{
-                method:"GET".into(), path:"/factor".into(), query:q,
-                http_version:"HTTP/1.0".into(), request_id:"job".into()
-            });
-            to_json(c,b,r#"{"error":"factor_failed"}"#)
+            if let Some(n_str) = job.params.get("n") {
+                if let Ok(n) = n_str.parse::<u64>() {
+                    let factors = factorize(n);
+                    serde_json::json!({
+                        "n": n,
+                        "factors": factors
+                    }).to_string()
+                } else {
+                    r#"{"error":"invalid_parameter"}"#.to_string()
+                }
+            } else {
+                r#"{"error":"missing_parameter"}"#.to_string()
+            }
         }
         "pi" => {
-            let mut q=std::collections::HashMap::new();
-            if let Some(d)=job.params.get("digits"){ q.insert("digits".into(), d.clone()); }
-            let (c,_t,b)=crate::handlers::cpu::pi(state, &Request{
-                method:"GET".into(), path:"/pi".into(), query:q,
-                http_version:"HTTP/1.0".into(), request_id:"job".into()
-            });
-            to_json(c,b,r#"{"error":"pi_failed"}"#)
+            // Reutiliza el handler de CPU construyendo una Request sintética
+            let digits = job.params.get("digits").cloned().unwrap_or_else(|| "10".to_string());
+            let req = Request {
+                method: "GET".into(),
+                path: "/pi".into(),
+                query: [("digits".into(), digits)].into_iter().collect(),
+                http_version: "HTTP/1.0".into(),
+                request_id: "job".into(),
+            };
+            let (code, _ct, body) = cpu_handlers::pi(state, &req);
+            if code == 200 {
+                String::from_utf8(body).unwrap_or_else(|_| "{}".into())
+            } else {
+                r#"{"error":"pi_failed"}"#.into()
+            }
         }
         "mandelbrot" => {
-            let mut q=std::collections::HashMap::new();
-            for k in ["width","height","max_iter"] {
-                if let Some(v)=job.params.get(k){ q.insert(k.to_string(), v.clone()); }
+            let width  = job.params.get("width").cloned().unwrap_or_else(|| "100".to_string());
+            let height = job.params.get("height").cloned().unwrap_or_else(|| "100".to_string());
+            let max_it = job.params.get("max_iter").cloned().unwrap_or_else(|| "100".to_string());
+            let req = Request {
+                method: "GET".into(),
+                path: "/mandelbrot".into(),
+                query: [
+                    ("width".into(), width),
+                    ("height".into(), height),
+                    ("max_iter".into(), max_it)
+                ].into_iter().collect(),
+                http_version: "HTTP/1.0".into(),
+                request_id: "job".into(),
+            };
+            let (code, _ct, body) = cpu_handlers::mandelbrot(state, &req);
+            if code == 200 {
+                String::from_utf8(body).unwrap_or_else(|_| "{}".into())
+            } else {
+                r#"{"error":"mandelbrot_failed"}"#.into()
             }
-            let (c,_t,b)=crate::handlers::cpu::mandelbrot(state, &Request{
-                method:"GET".into(), path:"/mandelbrot".into(), query:q,
-                http_version:"HTTP/1.0".into(), request_id:"job".into()
-            });
-            to_json(c,b,r#"{"error":"mandelbrot_failed"}"#)
         }
         "matrixmul" => {
-            let mut q=std::collections::HashMap::new();
-            if let Some(s)=job.params.get("size"){ q.insert("size".into(), s.clone()); }
-            if let Some(s)=job.params.get("seed"){ q.insert("seed".into(), s.clone()); }
-            let (c,_t,b)=crate::handlers::cpu::matrixmul(state, &Request{
-                method:"GET".into(), path:"/matrixmul".into(), query:q,
-                http_version:"HTTP/1.0".into(), request_id:"job".into()
-            });
-            to_json(c,b,r#"{"error":"matrixmul_failed"}"#)
+            let size = job.params.get("size").cloned().unwrap_or_else(|| "10".to_string());
+            let seed = job.params.get("seed").cloned().unwrap_or_else(|| "123".to_string());
+            let req = Request {
+                method: "GET".into(),
+                path: "/matrixmul".into(),
+                query: [("size".into(), size), ("seed".into(), seed)].into_iter().collect(),
+                http_version: "HTTP/1.0".into(),
+                request_id: "job".into(),
+            };
+            let (code, _ct, body) = cpu_handlers::matrixmul(state, &req);
+            if code == 200 {
+                String::from_utf8(body).unwrap_or_else(|_| "{}".into())
+            } else {
+                r#"{"error":"matrixmul_failed"}"#.into()
+            }
         }
 
-        // ---------------- IO ----------------
+        // -------- IO --------
         "sortfile" => {
-            let mut q=std::collections::HashMap::new();
-            for k in ["name","algo"] {
-                if let Some(v)=job.params.get(k){ q.insert(k.to_string(), v.clone()); }
-            }
-            let (c,_t,b)=crate::handlers::io::sortfile(state, &Request{
-                method:"GET".into(), path:"/sortfile".into(), query:q,
-                http_version:"HTTP/1.0".into(), request_id:"job".into()
-            });
-            to_json(c,b,r#"{"error":"sortfile_failed"}"#)
+            let name = job.params.get("name").cloned().unwrap_or_else(|| "nums.txt".to_string());
+            let algo = job.params.get("algo").cloned().unwrap_or_else(|| "merge".to_string());
+            let req = Request {
+                method: "GET".into(),
+                path: "/sortfile".into(),
+                query: [("name".into(), name), ("algo".into(), algo)].into_iter().collect(),
+                http_version: "HTTP/1.0".into(),
+                request_id: "job".into(),
+            };
+            let (code, _ct, body) = io_handlers::sortfile(state, &req);
+            if code == 200 { String::from_utf8(body).unwrap_or_default() } else { r#"{"error":"sort_failed"}"#.into() }
         }
         "wordcount" => {
-            let mut q=std::collections::HashMap::new();
-            if let Some(v)=job.params.get("name"){ q.insert("name".into(), v.clone()); }
-            let (c,_t,b)=crate::handlers::io::wordcount(state, &Request{
-                method:"GET".into(), path:"/wordcount".into(), query:q,
-                http_version:"HTTP/1.0".into(), request_id:"job".into()
-            });
-            to_json(c,b,r#"{"error":"wordcount_failed"}"#)
+            let name = job.params.get("name").cloned().unwrap_or_else(|| "nums.txt".to_string());
+            let req = Request {
+                method: "GET".into(),
+                path: "/wordcount".into(),
+                query: [("name".into(), name)].into_iter().collect(),
+                http_version: "HTTP/1.0".into(),
+                request_id: "job".into(),
+            };
+            let (code, _ct, body) = io_handlers::wordcount(state, &req);
+            if code == 200 { String::from_utf8(body).unwrap_or_default() } else { r#"{"error":"wc_failed"}"#.into() }
         }
         "grep" => {
-            let mut q=std::collections::HashMap::new();
-            for k in ["name","pattern"] {
-                if let Some(v)=job.params.get(k){ q.insert(k.to_string(), v.clone()); }
-            }
-            let (c,_t,b)=crate::handlers::io::grep(state, &Request{
-                method:"GET".into(), path:"/grep".into(), query:q,
-                http_version:"HTTP/1.0".into(), request_id:"job".into()
-            });
-            to_json(c,b,r#"{"error":"grep_failed"}"#)
+            let name = job.params.get("name").cloned().unwrap_or_else(|| "nums.txt".to_string());
+            let pat  = job.params.get("pattern").cloned().unwrap_or_else(|| "1".to_string());
+            let req = Request {
+                method: "GET".into(),
+                path: "/grep".into(),
+                query: [("name".into(), name), ("pattern".into(), pat)].into_iter().collect(),
+                http_version: "HTTP/1.0".into(),
+                request_id: "job".into(),
+            };
+            let (code, _ct, body) = io_handlers::grep(state, &req);
+            if code == 200 { String::from_utf8(body).unwrap_or_default() } else { r#"{"error":"grep_failed"}"#.into() }
         }
         "compress" => {
-            let mut q=std::collections::HashMap::new();
-            for k in ["name","codec"] {
-                if let Some(v)=job.params.get(k){ q.insert(k.to_string(), v.clone()); }
-            }
-            let (c,_t,b)=crate::handlers::io::compress(state, &Request{
-                method:"GET".into(), path:"/compress".into(), query:q,
-                http_version:"HTTP/1.0".into(), request_id:"job".into()
-            });
-            to_json(c,b,r#"{"error":"compress_failed"}"#)
+            let name  = job.params.get("name").cloned().unwrap_or_else(|| "nums.txt".to_string());
+            let codec = job.params.get("codec").cloned().unwrap_or_else(|| "gzip".to_string());
+            let req = Request {
+                method: "GET".into(),
+                path: "/compress".into(),
+                query: [("name".into(), name), ("codec".into(), codec)].into_iter().collect(),
+                http_version: "HTTP/1.0".into(),
+                request_id: "job".into(),
+            };
+            let (code, _ct, body) = io_handlers::compress(state, &req);
+            if code == 200 { String::from_utf8(body).unwrap_or_default() } else { r#"{"error":"compress_failed"}"#.into() }
         }
         "hashfile" => {
-            let mut q=std::collections::HashMap::new();
-            for k in ["name","algo"] {
-                if let Some(v)=job.params.get(k){ q.insert(k.to_string(), v.clone()); }
-            }
-            let (c,_t,b)=crate::handlers::io::hashfile(state, &Request{
-                method:"GET".into(), path:"/hashfile".into(), query:q,
-                http_version:"HTTP/1.0".into(), request_id:"job".into()
-            });
-            to_json(c,b,r#"{"error":"hashfile_failed"}"#)
+            let name = job.params.get("name").cloned().unwrap_or_else(|| "nums.txt".to_string());
+            let algo = job.params.get("algo").cloned().unwrap_or_else(|| "sha256".to_string());
+            let req = Request {
+                method: "GET".into(),
+                path: "/hashfile".into(),
+                query: [("name".into(), name), ("algo".into(), algo)].into_iter().collect(),
+                http_version: "HTTP/1.0".into(),
+                request_id: "job".into(),
+            };
+            let (code, _ct, body) = io_handlers::hashfile(state, &req);
+            if code == 200 { String::from_utf8(body).unwrap_or_default() } else { r#"{"error":"hash_failed"}"#.into() }
         }
 
-        _ => r#"{"error":"unknown_task"}"#.into(),
+        _ => r#"{"error":"unknown_task"}"#.to_string(),
     }
 }
 

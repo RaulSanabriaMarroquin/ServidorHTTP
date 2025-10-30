@@ -7,6 +7,7 @@ use crate::core::{now_ms_since_epoch, Request, Shared};
 use crate::handlers::jobs::maybe_enqueue_job; // doble modo
 use std::fs;
 use std::io::{BufRead, BufReader, Write};
+use crate::jobs::Priority;
 
 fn json_ok(bytes: Vec<u8>) -> (u16, &'static str, Vec<u8>) {
     (200, "application/json", bytes)
@@ -31,9 +32,41 @@ fn not_found(msg: &str) -> (u16, &'static str, Vec<u8>) {
 /// GET /sortfile?name=FILE&algo=merge|quick[&mode=job&prio=...]
 pub fn sortfile(state: &Shared, req: &Request) -> (u16, &'static str, Vec<u8>) {
     // Doble modo: si ?mode=job, encola con task="sortfile"
-    if let Some(resp) = maybe_enqueue_job(state, req, "sortfile", &["name", "algo"]) {
-        return resp;
+    if let Some(resp) = maybe_enqueue_job(state, req, "sortfile", &["name","algo"]) { return resp; }
+    if req.query.get("mode").map(|s| s == "job").unwrap_or(false) {
+        let default_prio = "normal".to_string();
+        let prio_s = req.query.get("prio").unwrap_or(&default_prio).to_string();
+        let prio = prio_s.parse::<Priority>().unwrap_or(Priority::Normal);
+
+        // backpressure
+        let pending = state.job_store.pending_len();
+        let max_queue = std::env::var("JOBS_QUEUE_MAX").ok().and_then(|v| v.parse().ok()).unwrap_or(1000usize);
+        if pending >= max_queue {
+            let body = r#"{"error":"overloaded","retry_after_ms":2000}"#.as_bytes().to_vec();
+            return (503, "application/json", body);
+        }
+
+        // copia parámetros menos mode/prio
+        let mut params = req.query.clone();
+        params.remove("mode");
+        params.remove("prio");
+
+        // Validación mínima rápida (opcional) para no encolar basura
+        if !params.contains_key("name") {
+            return bad_request("Parameter 'name' is required");
+        }
+        if let Some(algo) = params.get("algo") {
+            let algo_l = algo.to_ascii_lowercase();
+            if algo_l != "merge" && algo_l != "quick" {
+                return bad_request("Parameter 'algo' must be 'merge' or 'quick'");
+            }
+        }
+
+        let job_id = state.job_store.submit("sortfile".into(), params, prio);
+        let body = format!(r#"{{"job_id":"{}","status":"queued","task":"sortfile","priority":"{}"}}"#, job_id.0, prio_s);
+        return (200, "application/json", body.into_bytes());
     }
+
 
     let start = now_ms_since_epoch();
 
@@ -101,8 +134,39 @@ pub fn sortfile(state: &Shared, req: &Request) -> (u16, &'static str, Vec<u8>) {
 
 /// GET /wordcount?name=FILE[&mode=job]
 pub fn wordcount(state: &Shared, req: &Request) -> (u16, &'static str, Vec<u8>) {
-    if let Some(resp) = maybe_enqueue_job(state, req, "wordcount", &["name"]) {
-        return resp;
+    if let Some(resp) = maybe_enqueue_job(state, req, "wordcount", &["name"]) { return resp; }
+    if req.query.get("mode").map(|s| s == "job").unwrap_or(false) {
+        let default_prio = "normal".to_string();
+        let prio_s = req.query.get("prio").unwrap_or(&default_prio).to_string();
+        let prio = prio_s.parse::<Priority>().unwrap_or(Priority::Normal);
+
+        // backpressure
+        let pending = state.job_store.pending_len();
+        let max_queue = std::env::var("JOBS_QUEUE_MAX").ok().and_then(|v| v.parse().ok()).unwrap_or(1000usize);
+        if pending >= max_queue {
+            let body = r#"{"error":"overloaded","retry_after_ms":2000}"#.as_bytes().to_vec();
+            return (503, "application/json", body);
+        }
+
+        // copia parámetros menos mode/prio
+        let mut params = req.query.clone();
+        params.remove("mode");
+        params.remove("prio");
+
+        // Validación mínima rápida (opcional) para no encolar basura
+        if !params.contains_key("name") {
+            return bad_request("Parameter 'name' is required");
+        }
+        if let Some(algo) = params.get("algo") {
+            let algo_l = algo.to_ascii_lowercase();
+            if algo_l != "merge" && algo_l != "quick" {
+                return bad_request("Parameter 'algo' must be 'merge' or 'quick'");
+            }
+        }
+
+        let job_id = state.job_store.submit("sortfile".into(), params, prio);
+        let body = format!(r#"{{"job_id":"{}","status":"queued","task":"sortfile","priority":"{}"}}"#, job_id.0, prio_s);
+        return (200, "application/json", body.into_bytes());
     }
 
     let start = now_ms_since_epoch();
@@ -139,9 +203,42 @@ pub fn wordcount(state: &Shared, req: &Request) -> (u16, &'static str, Vec<u8>) 
 
 /// GET /grep?name=FILE&pattern=REGEX[&mode=job]
 pub fn grep(state: &Shared, req: &Request) -> (u16, &'static str, Vec<u8>) {
-    if let Some(resp) = maybe_enqueue_job(state, req, "grep", &["name", "pattern"]) {
-        return resp;
+    if let Some(resp) = maybe_enqueue_job(state, req, "grep", &["name","pattern"]) { return resp; }
+    if req.query.get("mode").map(|s| s == "job").unwrap_or(false) {
+        let default_prio = "normal".to_string();
+        let prio_s = req.query.get("prio").unwrap_or(&default_prio).to_string();
+        let prio = prio_s.parse::<Priority>().unwrap_or(Priority::Normal);
+
+        // backpressure
+        let pending = state.job_store.pending_len();
+        let max_queue = std::env::var("JOBS_QUEUE_MAX").ok().and_then(|v| v.parse().ok()).unwrap_or(1000usize);
+        if pending >= max_queue {
+            let body = r#"{"error":"overloaded","retry_after_ms":2000}"#.as_bytes().to_vec();
+            return (503, "application/json", body);
+        }
+
+        // copia parámetros menos mode/prio
+        let mut params = req.query.clone();
+        params.remove("mode");
+        params.remove("prio");
+
+        // Validación mínima rápida (opcional) para no encolar basura
+        if !params.contains_key("name") {
+            return bad_request("Parameter 'name' is required");
+        }
+        if let Some(algo) = params.get("algo") {
+            let algo_l = algo.to_ascii_lowercase();
+            if algo_l != "merge" && algo_l != "quick" {
+                return bad_request("Parameter 'algo' must be 'merge' or 'quick'");
+            }
+        }
+
+        let job_id = state.job_store.submit("sortfile".into(), params, prio);
+        let body = format!(r#"{{"job_id":"{}","status":"queued","task":"sortfile","priority":"{}"}}"#, job_id.0, prio_s);
+        return (200, "application/json", body.into_bytes());
     }
+
+
 
     let start = now_ms_since_epoch();
 
@@ -182,9 +279,42 @@ pub fn grep(state: &Shared, req: &Request) -> (u16, &'static str, Vec<u8>) {
 
 /// GET /compress?name=FILE&codec=gzip|xz[&mode=job]
 pub fn compress(state: &Shared, req: &Request) -> (u16, &'static str, Vec<u8>) {
-    if let Some(resp) = maybe_enqueue_job(state, req, "compress", &["name", "codec"]) {
-        return resp;
+    if let Some(resp) = maybe_enqueue_job(state, req, "compress", &["name","codec"]) { return resp; }
+    if req.query.get("mode").map(|s| s == "job").unwrap_or(false) {
+        let default_prio = "normal".to_string();
+        let prio_s = req.query.get("prio").unwrap_or(&default_prio).to_string();
+        let prio = prio_s.parse::<Priority>().unwrap_or(Priority::Normal);
+
+        // backpressure
+        let pending = state.job_store.pending_len();
+        let max_queue = std::env::var("JOBS_QUEUE_MAX").ok().and_then(|v| v.parse().ok()).unwrap_or(1000usize);
+        if pending >= max_queue {
+            let body = r#"{"error":"overloaded","retry_after_ms":2000}"#.as_bytes().to_vec();
+            return (503, "application/json", body);
+        }
+
+        // copia parámetros menos mode/prio
+        let mut params = req.query.clone();
+        params.remove("mode");
+        params.remove("prio");
+
+        // Validación mínima rápida (opcional) para no encolar basura
+        if !params.contains_key("name") {
+            return bad_request("Parameter 'name' is required");
+        }
+        if let Some(algo) = params.get("algo") {
+            let algo_l = algo.to_ascii_lowercase();
+            if algo_l != "merge" && algo_l != "quick" {
+                return bad_request("Parameter 'algo' must be 'merge' or 'quick'");
+            }
+        }
+
+        let job_id = state.job_store.submit("sortfile".into(), params, prio);
+        let body = format!(r#"{{"job_id":"{}","status":"queued","task":"sortfile","priority":"{}"}}"#, job_id.0, prio_s);
+        return (200, "application/json", body.into_bytes());
     }
+
+
 
     let start = now_ms_since_epoch();
 
@@ -249,9 +379,41 @@ pub fn compress(state: &Shared, req: &Request) -> (u16, &'static str, Vec<u8>) {
 
 /// GET /hashfile?name=FILE&algo=sha256[&mode=job]
 pub fn hashfile(state: &Shared, req: &Request) -> (u16, &'static str, Vec<u8>) {
-    if let Some(resp) = maybe_enqueue_job(state, req, "hashfile", &["name", "algo"]) {
-        return resp;
+    if let Some(resp) = maybe_enqueue_job(state, req, "hashfile", &["name","algo"]) { return resp; }
+    if req.query.get("mode").map(|s| s == "job").unwrap_or(false) {
+        let default_prio = "normal".to_string();
+        let prio_s = req.query.get("prio").unwrap_or(&default_prio).to_string();
+        let prio = prio_s.parse::<Priority>().unwrap_or(Priority::Normal);
+
+        // backpressure
+        let pending = state.job_store.pending_len();
+        let max_queue = std::env::var("JOBS_QUEUE_MAX").ok().and_then(|v| v.parse().ok()).unwrap_or(1000usize);
+        if pending >= max_queue {
+            let body = r#"{"error":"overloaded","retry_after_ms":2000}"#.as_bytes().to_vec();
+            return (503, "application/json", body);
+        }
+
+        // copia parámetros menos mode/prio
+        let mut params = req.query.clone();
+        params.remove("mode");
+        params.remove("prio");
+
+        // Validación mínima rápida (opcional) para no encolar basura
+        if !params.contains_key("name") {
+            return bad_request("Parameter 'name' is required");
+        }
+        if let Some(algo) = params.get("algo") {
+            let algo_l = algo.to_ascii_lowercase();
+            if algo_l != "merge" && algo_l != "quick" {
+                return bad_request("Parameter 'algo' must be 'merge' or 'quick'");
+            }
+        }
+
+        let job_id = state.job_store.submit("sortfile".into(), params, prio);
+        let body = format!(r#"{{"job_id":"{}","status":"queued","task":"sortfile","priority":"{}"}}"#, job_id.0, prio_s);
+        return (200, "application/json", body.into_bytes());
     }
+
 
     let start = now_ms_since_epoch();
 

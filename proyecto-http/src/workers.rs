@@ -144,23 +144,19 @@ pub struct Pools {
     pub io: WorkQueue,
 }
 
-// Defaults (hasta que los movamos a Config en Sprint 3)
-const DEFAULT_WORKERS_BASIC: usize = 2;
-const DEFAULT_WORKERS_CPU: usize = 4;
-const DEFAULT_WORKERS_IO: usize = 4;
-
-const DEFAULT_QUEUE_BASIC: usize = 64;
-const DEFAULT_QUEUE_CPU: usize = 128;
-const DEFAULT_QUEUE_IO: usize = 128;
+// Los valores por defecto ahora vienen de Config; dejamos las constantes
+// previas eliminadas para evitar confusión y warnings.
 
     /// Crea los pools reales (por ahora ignoramos `state`, pero lo dejamos
     /// en la firma porque en Sprint 3 lo usaremos para métricas y config).
 impl Pools {
-    pub fn new(_state: &Shared) -> Self {
+    pub fn new(state: &Shared) -> Self {
+        // Usa configuración en lugar de valores fijos
+        let cfg = &state.cfg;
         Self {
-            basic: WorkQueue::new("basic", 64, 2),
-            cpu:   WorkQueue::new("cpu",   128, 4),
-            io:    WorkQueue::new("io",    128, 4),
+            basic: WorkQueue::new("basic", cfg.queue_basic, cfg.workers_basic),
+            cpu:   WorkQueue::new("cpu",   cfg.queue_cpu,   cfg.workers_cpu),
+            io:    WorkQueue::new("io",    cfg.queue_io,    cfg.workers_io),
         }
     }
     /// Pools “dummy” para tests: sin workers y profundidad 0.

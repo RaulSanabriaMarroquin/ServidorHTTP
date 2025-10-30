@@ -74,6 +74,8 @@ pub fn submit(state: &Shared, req: &Request) -> (u16, &'static str, Vec<u8>) {
         Some(t) => t.to_string(),
         None => return bad_request("Parameter 'task' is required"),
     };
+    let default_prio = "normal".to_string();
+    let prio_param = req.query.get("prio").unwrap_or(&default_prio);
 
     // backpressure
     let pending = state.job_store.pending_len();

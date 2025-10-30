@@ -91,7 +91,7 @@ pub fn isprime(state: &Shared, req: &Request) -> (u16, &'static str, Vec<u8>) {
 /// GET /factor?n=NUM
 pub fn factor(state: &Shared, req: &Request) -> (u16, &'static str, Vec<u8>) {
     // --- doble modo ---
-    if let Some(resp) = maybe_enqueue_job(state, req, "isprime", &["n","method"]) { return resp; }
+    if let Some(resp) = maybe_enqueue_job(state, req, "factor", &["n"]) { return resp; }
     if req.query.get("mode").map(|m| m == "job").unwrap_or(false) {
         let task = "factor";
         let prio = req.query.get("prio").cloned().unwrap_or_else(|| "normal".to_string());
@@ -268,7 +268,7 @@ fn pi_with_machin(digits: u32) -> String {
 /// GET /pi?digits=D
 pub fn pi(state: &Shared, req: &Request) -> (u16, &'static str, Vec<u8>) {
     // --- doble modo ---
-    if let Some(resp) = maybe_enqueue_job(state, req, "isprime", &["n","method"]) { return resp; }
+    if let Some(resp) = maybe_enqueue_job(state, req, "pi", &["digits","method"]) { return resp; }
     if req.query.get("mode").map(|m| m == "job").unwrap_or(false) {
         let task = "pi";
         let prio = req.query.get("prio").cloned().unwrap_or_else(|| "normal".to_string());
@@ -296,21 +296,15 @@ pub fn pi(state: &Shared, req: &Request) -> (u16, &'static str, Vec<u8>) {
         Ok(val) => val,
         Err(_) => return bad_request("Parameter 'digits' must be a valid positive integer"),
     };
+
     if digits == 0 || digits > 1000 {
         return bad_request("Parameter 'digits' must be between 1 and 1000");
     }
 
-    // Solo soportamos chudnovsky (por ahora)
-    if let Some(m) = req.query.get("method") {
-        if m.to_ascii_lowercase() != "chudnovsky" {
-            return bad_request("Parameter 'method' must be 'chudnovsky'");
-        }
-    }
-
-    let s = calculate_pi_chudnovsky(digits);
+    let s = pi_with_machin(digits);
     let elapsed = now_ms_since_epoch() - start;
     let body = format!(
-        r#"{{"digits":{},"pi":"{}","method":"chudnovsky","elapsed_ms":{}}}"#,
+        r#"{{"digits":{},"pi":"{}","method":"machin","elapsed_ms":{}}}"#,
         digits, s, elapsed
     );
     (200, "application/json", body.into_bytes())
@@ -319,7 +313,7 @@ pub fn pi(state: &Shared, req: &Request) -> (u16, &'static str, Vec<u8>) {
 /// GET /mandelbrot?width=W&height=H&max_iter=I
 pub fn mandelbrot(state: &Shared, req: &Request) -> (u16, &'static str, Vec<u8>) {
     // --- doble modo ---
-    if let Some(resp) = maybe_enqueue_job(state, req, "isprime", &["n","method"]) { return resp; }
+    if let Some(resp) = maybe_enqueue_job(state, req, "mandelbrot", &["width","height","max_iter"]) { return resp; }
     if req.query.get("mode").map(|m| m == "job").unwrap_or(false) {
         let task = "mandelbrot";
         let prio = req.query.get("prio").cloned().unwrap_or_else(|| "normal".to_string());
@@ -385,7 +379,7 @@ pub fn mandelbrot(state: &Shared, req: &Request) -> (u16, &'static str, Vec<u8>)
 /// GET /matrixmul?size=N&seed=S
 pub fn matrixmul(state: &Shared, req: &Request) -> (u16, &'static str, Vec<u8>) {
     // --- doble modo ---
-    if let Some(resp) = maybe_enqueue_job(state, req, "isprime", &["n","method"]) { return resp; }
+    if let Some(resp) = maybe_enqueue_job(state, req, "matrixmul", &["size","seed"]) { return resp; }
     if req.query.get("mode").map(|m| m == "job").unwrap_or(false) {
         let task = "matrixmul";
         let prio = req.query.get("prio").cloned().unwrap_or_else(|| "normal".to_string());

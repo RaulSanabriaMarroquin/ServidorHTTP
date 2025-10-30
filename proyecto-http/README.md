@@ -1,29 +1,14 @@
-# 🚀 Servidor HTTP/1.0 - Proyecto PSO1
+# Servidor HTTP/1.0 - Proyecto 1
 
 **Servidor HTTP/1.0 multihilo implementado en Rust para el curso Principios de Sistemas Operativos**
 
-## 📋 Descripción
+## Descripción
 
 Este proyecto implementa un servidor HTTP/1.0 completo que demuestra conceptos fundamentales de sistemas operativos:
 - **Concurrencia**: Múltiples clientes simultáneos
 - **Sincronización**: Arc<Mutex<...>> y canales mpsc
 - **Planificación**: Pools de workers por tipo de tarea
 - **Gestión de recursos**: Colas con backpressure
-
-## 🏗️ Arquitectura
-
-```
-┌─────────────────┐    ┌─────────────────┐    ┌─────────────────┐
-│   HTTP Listener │───▶│     Router      │───▶│   Worker Pools  │
-│   (main thread) │    │   (routing)      │    │  basic/cpu/io   │
-└─────────────────┘    └─────────────────┘    └─────────────────┘
-                                │
-                                ▼
-                       ┌─────────────────┐
-                       │   Job Manager   │
-                       │ (async tasks)   │
-                       └─────────────────┘
-```
 
 ### Componentes Principales
 
@@ -35,16 +20,12 @@ Este proyecto implementa un servidor HTTP/1.0 completo que demuestra conceptos f
 - **`config.rs`**: Configuración del servidor
 - **`metrics.rs`**: Métricas y observabilidad
 
-## 🚀 Instalación y Ejecución
-
-### Prerrequisitos
-- Rust 1.70+ (edición 2021)
-- Sistema operativo Unix-like (Linux/macOS/WSL)
+## Instalación y Ejecución
 
 ### Compilación
 ```bash
 # Clonar el repositorio
-git clone <tu-repo>
+git clone <https://github.com/RaulSanabriaMarroquin/ServidorHTTP.git>
 cd proyecto-http
 
 # Compilar en modo release
@@ -120,7 +101,7 @@ cargo run
 - `GET /loadtest?tasks=10&sleep=100` - Prueba de carga
 - `GET /metrics` - Métricas detalladas del sistema
 
-## 🧪 Pruebas
+## Pruebas
 
 ### Pruebas Unitarias
 ```bash
@@ -154,99 +135,6 @@ cargo install cargo-tarpaulin  # Para cobertura
 wrk -t12 -c400 -d30s http://localhost:8080/status
 ```
 
-## 📊 Métricas y Monitoreo
-
-### Endpoint `/metrics`
-Retorna métricas detalladas en formato JSON:
-```json
-{
-  "queues": {
-    "basic": {"pending": 0, "max_depth": 64, "workers": 2},
-    "cpu": {"pending": 3, "max_depth": 128, "workers": 4},
-    "io": {"pending": 1, "max_depth": 128, "workers": 4}
-  },
-  "workers": {
-    "basic": {"total": 2, "busy": 0},
-    "cpu": {"total": 4, "busy": 2},
-    "io": {"total": 4, "busy": 1}
-  },
-  "latency_ms": {
-    "basic": {"p50": 5, "p95": 15, "p99": 25},
-    "cpu": {"p50": 50, "p95": 200, "p99": 500},
-    "io": {"p50": 100, "p95": 1000, "p99": 5000}
-  },
-  "throughput": {"requests_per_second": 150}
-}
-```
-
-### Endpoint `/status`
-Información básica del servidor:
-```json
-{
-  "status": "ok",
-  "port": 8080,
-  "pid": 12345,
-  "uptime_ms": 3600000,
-  "metrics": {"accepted": 1000, "handled": 995},
-  "queues": [...],
-  "config": {...}
-}
-```
-
-## 🔧 Configuración Avanzada
-
-### Variables de Entorno Completas
-```bash
-# Puerto y binding
-PORT=8080                    # Puerto del servidor
-HTTP_PORT=8080              # Alias para PORT
-
-# Workers por pool
-WORKERS_BASIC=2             # Workers para endpoints básicos
-WORKERS_CPU=4               # Workers para CPU-bound
-WORKERS_IO=4                # Workers para IO-bound
-BASIC_WORKERS=2             # Alias
-CPU_WORKERS=4               # Alias
-IO_WORKERS=4                # Alias
-
-# Profundidad de colas
-QUEUE_BASIC=64              # Cola básica
-QUEUE_CPU=128               # Cola CPU
-QUEUE_IO=128                # Cola IO
-BASIC_QDEPTH=64             # Alias
-CPU_QDEPTH=128              # Alias
-IO_QDEPTH=128               # Alias
-
-# Timeouts
-TIMEOUT_CPU_MS=60000        # Timeout CPU (60s)
-TIMEOUT_IO_MS=120000        # Timeout IO (120s)
-```
-
-### Ejemplos de Configuración
-
-#### Servidor de Alto Rendimiento
-```bash
-export WORKERS_BASIC=8
-export WORKERS_CPU=16
-export WORKERS_IO=12
-export QUEUE_BASIC=512
-export QUEUE_CPU=1024
-export QUEUE_IO=1024
-cargo run --release
-```
-
-#### Servidor de Desarrollo
-```bash
-export WORKERS_BASIC=1
-export WORKERS_CPU=2
-export WORKERS_IO=2
-export QUEUE_BASIC=16
-export QUEUE_CPU=32
-export QUEUE_IO=32
-cargo run
-```
-
-## 🏗️ Arquitectura Técnica
 
 ### Concurrencia
 - **Thread-per-connection**: Cada conexión se maneja en un hilo separado
@@ -264,72 +152,7 @@ cargo run
 - **Recuperación**: Jobs sobreviven a restarts graceful
 - **Cleanup**: Limpieza automática de jobs antiguos
 
-## 🐛 Troubleshooting
+##  Autores
 
-### Problemas Comunes
-
-#### Puerto en Uso
-```bash
-# Error: Address already in use
-# Solución: Cambiar puerto
-export PORT=9090
-cargo run
-```
-
-#### Workers Bloqueados
-```bash
-# Verificar métricas
-curl http://localhost:8080/metrics
-
-# Si hay muchos pending, aumentar workers
-export WORKERS_CPU=8
-```
-
-#### Jobs No Se Procesan
-```bash
-# Verificar estado del job
-curl http://localhost:8080/jobs/status?id=job-123
-
-# Verificar logs del servidor
-cargo run -- --verbose
-```
-
-## 📈 Rendimiento
-
-### Benchmarks Típicos
-- **Requests/sec**: 100-500 (dependiendo del endpoint)
-- **Latencia p50**: 5-50ms (básicos vs CPU-bound)
-- **Latencia p95**: 15-500ms
-- **Memoria**: ~50MB base + ~1MB por worker
-
-### Optimizaciones
-- Usar `cargo run --release` para producción
-- Ajustar número de workers según carga
-- Monitorear métricas en `/metrics`
-- Usar pools apropiados para cada tipo de tarea
-
-## 🤝 Contribución
-
-1. Fork el proyecto
-2. Crea una rama para tu feature (`git checkout -b feature/AmazingFeature`)
-3. Commit tus cambios (`git commit -m 'Add some AmazingFeature'`)
-4. Push a la rama (`git push origin feature/AmazingFeature`)
-5. Abre un Pull Request
-
-## 📄 Licencia
-
-Este proyecto es parte del curso Principios de Sistemas Operativos de la Universidad Tecnológica de Costa Rica.
-
-## 👥 Autores
-
-- **Tu Nombre** - *Desarrollo inicial* - [TuGitHub](https://github.com/tuusuario)
-
-## 🙏 Agradecimientos
-
-- Profesor Kenneth Obando Rodríguez
-- Curso Principios de Sistemas Operativos
-- Comunidad Rust por las excelentes herramientas
-
----
-
-**Nota**: Este servidor está diseñado para fines educativos y demostrar conceptos de sistemas operativos. No está optimizado para uso en producción sin modificaciones adicionales.
+- **David A.** 
+- **Raúl M.** 

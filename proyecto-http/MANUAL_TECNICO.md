@@ -1,3 +1,8 @@
+**Realizado por:**
+David Acuña,
+Raúl Marroquin
+
+
 # Manual Técnico - Servidor HTTP/1.0
 
 ## Versión 0.1.0
@@ -6,7 +11,7 @@
 **Lenguaje:** Rust  
 **Curso:** Principios de Sistemas Operativos  
 **Institución:** Universidad Tecnológica de Costa Rica
-
+**Realizado por:** David Acuña, Raúl Sanabria
 ---
 
 ## Índice
@@ -56,7 +61,7 @@ Este documento describimos la arquitectura, configuración que se implementó y 
 ### Requisitos Mínimos
 
 - **Sistema Operativo:** Linux, macOS o Windows con WSL2
-- **Rust:** Versión 1.70 o superior (edición 2021)
+- **Rust:** Versión 1.70 o superior
 - **Memoria RAM:** Mínimo 512MB disponible
 - **Espacio en Disco:** 500MB para compilación y datos de prueba
 
@@ -153,7 +158,7 @@ El servidor implementa una arquitectura multihilo con los siguientes componentes
 ### Componentes de Código
 
 #### `src/main.rs`
-Es el punto de entrada que se encarga de nicializar la configuración, router, estado compartido y arranca el listener HTTP.
+Es el punto de entrada que se encarga de inicializar la configuración, router, estado compartido y arranca el listener HTTP.
 
 #### `src/core.rs`
 - Maneja conexiones HTTP entrantes
@@ -182,7 +187,7 @@ Es el punto de entrada que se encarga de nicializar la configuración, router, e
 
 #### `src/handlers/`
 - `basic.rs`: Endpoints simples (status, timestamp, reverse, etc.)
-- `cpu.rs`: Tareas intensivas en CPU (isprime, pi, mandelbrot)
+- `cpu.rs`: Tareas en CPU (isprime, pi, mandelbrot)
 - `io.rs`: Operaciones de I/O (sortfile, grep, compress)
 - `jobs.rs`: Sistema de jobs (submit, status, result, cancel)
 
@@ -205,15 +210,10 @@ Es el punto de entrada que se encarga de nicializar la configuración, router, e
 ### Sincronización y Concurrencia
 
 #### Arc<Mutex<T>>
-Usado para estado compartido entre threads:
-- Configuración
-- Router (inmutable pero compartido)
-- Métricas
+Usado para estado compartido entre threads, como la configuración, router (inmutable pero compartido) y métricas.
 
 #### Canales mpsc
-Usados para comunicación entre threads:
-- Envío de requests desde listener a workers
-- Comunicación entre Job Manager y workers
+Usados para comunicación entre threads que se encargan de envío de requests desde listener a workers y comunicación entre Job Manager y workers
 
 #### Deadlocks
 Diseño que evita deadlocks por ordenamiento de locks y timeouts en operaciones bloqueantes.
@@ -1651,8 +1651,4 @@ test: agregar tests para sortfile
 
 ---
 
-**Versión del Documento:** 1.0  
-**Última Actualización:** Enero 2024  
-**Autor:** Equipo de Desarrollo  
-**Curso:** Principios de Sistemas Operativos  
-**Institución:** Universidad Tecnológica de Costa Rica
+

@@ -138,9 +138,9 @@ pub fn status(state: &Shared, _req: &Request) -> (u16, &'static str, Vec<u8>) {
   "metrics":{{"accepted":{acc},"handled":{hdl}}},
   "workers_detail": {workers_detail},
   "queues":[
-    {{"name":"{qb_name}","pending":{qb_pending},"max_depth":{qb_max},"workers":{qb_workers}}},
-    {{"name":"{qc_name}","pending":{qc_pending},"max_depth":{qc_max},"workers":{qc_workers}}},
-        {{"name":"{qi_name}","pending":{qi_pending},"max_depth":{qi_max},"workers":{qi_workers}}}
+        {{"name":"{qb_name}","queued":{qb_queued},"running":{qb_running},"pending":{qb_pending},"max_depth":{qb_max},"workers":{qb_workers}}},
+    {{"name":"{qc_name}","queued":{qc_queued},"running":{qc_running},"pending":{qc_pending},"max_depth":{qc_max},"workers":{qc_workers}}},
+    {{"name":"{qi_name}","queued":{qi_queued},"running":{qi_running},"pending":{qi_pending},"max_depth":{qi_max},"workers":{qi_workers}}}
   ],
   "config":{{
     "workers":{{"basic":{w_basic},"cpu":{w_cpu},"io":{w_io}}}, 
@@ -154,9 +154,9 @@ pub fn status(state: &Shared, _req: &Request) -> (u16, &'static str, Vec<u8>) {
         acc = accepted,
         hdl = handled,
 
-        qb_name = qb.name, qb_pending = qb.pending, qb_max = qb.max_depth, qb_workers = qb.workers,
-        qc_name = qc.name, qc_pending = qc.pending, qc_max = qc.max_depth, qc_workers = qc.workers,
-        qi_name = qi.name, qi_pending = qi.pending, qi_max = qi.max_depth, qi_workers = qi.workers,
+        qb_name = qb.name, qb_queued = qb.queued, qb_pending = qb.pending, qb_running = qb.running, qb_max = qb.max_depth, qb_workers = qb.workers,
+        qc_name = qc.name, qc_queued = qc.queued, qc_running = qc.running, qc_pending = qc.pending, qc_max = qc.max_depth, qc_workers = qc.workers,
+        qi_name = qi.name, qi_queued = qi.queued, qi_running = qi.running, qi_pending = qi.pending, qi_max = qi.max_depth, qi_workers = qi.workers,
 
         w_basic = state.cfg.workers_basic, w_cpu = state.cfg.workers_cpu, w_io = state.cfg.workers_io,
         q_basic = state.cfg.queue_basic,   q_cpu = state.cfg.queue_cpu,   q_io = state.cfg.queue_io,

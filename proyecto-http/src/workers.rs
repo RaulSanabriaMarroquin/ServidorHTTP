@@ -1,7 +1,7 @@
 // src/workers.rs
 use std::sync::{mpsc, Arc, Mutex};
-use std::thread::{self, JoinHandle};
-use std::sync::atomic::{AtomicBool, Ordering}; 
+use std::thread::JoinHandle;
+use std::sync::atomic::{AtomicBool,AtomicUsize, Ordering}; 
 
 use crate::core::Shared;
 
@@ -31,6 +31,8 @@ pub struct Backpressure {
 pub struct QueueSnapshot {
     pub name: &'static str,
     pub pending: usize,
+    pub queued: usize,    // NUEVO
+    pub running: usize,   // NUEVO
     pub max_depth: usize,
     pub workers: usize,
 }
@@ -40,7 +42,7 @@ pub struct WorkQueue {
     pub name: &'static str,
     pub tx: mpsc::Sender<Task>,
     // Receiver compartido entre hilos via Arc<Mutex<...>>
-    rx: Arc<Mutex<mpsc::Receiver<Task>>>,
+    _rx: Arc<Mutex<mpsc::Receiver<Task>>>,
     // Contador de tareas en cola/ejecución para hacer backpressure sencillo
     pending: Arc<Mutex<usize>>,
     pub max_depth: usize,
@@ -48,6 +50,7 @@ pub struct WorkQueue {
     // NUEVO: estado por worker
     worker_busy: Vec<Arc<AtomicBool>>,
     worker_ids: Vec<String>,
+    running: Arc<AtomicUsize>,
 }
 
 impl WorkQueue {
@@ -55,6 +58,7 @@ impl WorkQueue {
     pub fn new(name: &'static str, max_depth: usize, workers: usize) -> Self {
         let (tx, rx) = mpsc::channel::<Task>();
         let rx_arc = Arc::new(Mutex::new(rx));
+        let running = Arc::new(AtomicUsize::new(0));
         let pending = Arc::new(Mutex::new(0usize));
 
         let mut handles = Vec::with_capacity(workers);
@@ -64,6 +68,7 @@ impl WorkQueue {
         for i in 0..workers {
             let rx_i = Arc::clone(&rx_arc);
             let pending_i = Arc::clone(&pending);
+            let running_i = Arc::clone(&running);
 
             // id y flag busy de este worker
             let wid = format!("{}-w{}", name, i);
@@ -81,12 +86,14 @@ impl WorkQueue {
                         Ok(job) => {
                             // marcar ocupado
                             busy_flag_thread.store(true, Ordering::SeqCst);
+                            running_i.fetch_add(1, Ordering::SeqCst);  // ++running
 
                             // Ejecutar blindado contra panic
                             let res = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
                                 job();
                             }));
 
+                            running_i.fetch_sub(1, Ordering::SeqCst);  // --running
                             // desocupar (siempre)
                             busy_flag_thread.store(false, Ordering::SeqCst);
                             if let Ok(mut p) = pending_i.lock() {
@@ -116,8 +123,9 @@ impl WorkQueue {
         Self {
             name,
             tx,
-            rx: rx_arc,
+            _rx: rx_arc,
             pending,
+            running,
             max_depth,
             workers: handles,
             worker_busy,
@@ -164,9 +172,13 @@ impl WorkQueue {
     /// Foto rápida del estado de la cola.
     pub fn snapshot(&self) -> QueueSnapshot {
         let p = self.pending.lock().map(|g| *g).unwrap_or(0);
+        let r = self.running.load(Ordering::SeqCst);
+        let q = p.saturating_sub(r);  // queued reales
         QueueSnapshot {
             name: self.name,
             pending: p,
+            queued: q,
+            running: r,
             max_depth: self.max_depth,
             workers: self.workers.len(),
         }

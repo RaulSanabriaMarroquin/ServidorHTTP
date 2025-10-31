@@ -18,7 +18,7 @@ impl Router {
     pub fn route(&self, path: &str) -> Route {
         match path {
             // Básicos / ligeros → pool "basic"
-            "/status"     => Route::Basic(basic::status),
+            "/status"     => Route::Direct(basic::status),
             "/timestamp"  => Route::Basic(basic::timestamp),
             "/reverse"    => Route::Basic(basic::reverse),
             "/toupper"    => Route::Basic(basic::toupper),
@@ -64,6 +64,7 @@ impl Router {
 /// Resultado del enrutamiento: indica pool y función handler a ejecutar.
 #[derive(Clone, Copy, Debug)]
 pub enum Route {
+    Direct(HandlerFn),
     Basic(HandlerFn),
     Cpu(HandlerFn),
     Io(HandlerFn),

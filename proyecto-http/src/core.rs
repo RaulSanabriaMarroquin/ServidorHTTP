@@ -148,13 +148,15 @@ pub fn http_listen_loop(state: &Shared) -> std::io::Result<()> {
                 next_id += 1;
 
                 let state_cloned = Arc::clone(state);
-                thread::spawn(move || {
+                std::thread::Builder::new()
+                .name(format!("control-{}", req_id))
+                .spawn(move || {
                     if let Err(e) = handle_connection(&state_cloned, &mut s, &req_id) {
                         eprintln!("[WARN] connection error ({}): {}", req_id, e);
-                    }
-                    // ++handled con Mutex
-                    state_cloned.metrics.inc_handled();
-                });
+        }
+        state_cloned.metrics.inc_handled();
+    })
+    .expect("spawn connection thread");
             }
             Err(e) => eprintln!("[WARN] accept error: {e}"),
         }
@@ -212,18 +214,36 @@ pub fn handle_connection(
 
     // 6) resolver ruta → (pool, handler)
     match state.router.route(&req.path) {
-        Route::Basic(handler) => enqueue_on_pool(stream, req, handler, &state.pools.basic, state),
-        Route::Cpu(handler) => enqueue_on_pool(stream, req, handler, &state.pools.cpu, state),
-        Route::Io(handler) => enqueue_on_pool(stream, req, handler, &state.pools.io, state),
-        Route::NotFound => {
-            let body = format!(
-                r#"{{"error":"not_found","path":"{}","request_id":"{}"}}"#,
-                path, req_id
-            );
-            write_response(stream, 404, "Not Found", req_id, body.as_bytes())
-        }
+
+    // NUEVO: ejecutar sin encolar (control plane)
+    Route::Direct(handler) => {
+        let (status, _ctype, body) = handler(state, &req);
+        let reason = match status {
+            200 => "OK",
+            400 => "Bad Request",
+            404 => "Not Found",
+            409 => "Conflict",
+            429 => "Too Many Requests",
+            500 => "Internal Server Error",
+            503 => "Service Unavailable",
+            _   => "OK",
+        };
+        // Escribimos la respuesta directamente en este mismo hilo “control-<req_id>”
+        return write_response(stream, status, reason, &req.request_id, &body);
     }
-}
+
+            Route::Basic(handler) => enqueue_on_pool(stream, req, handler, &state.pools.basic, state),
+            Route::Cpu(handler)   => enqueue_on_pool(stream, req, handler, &state.pools.cpu,   state),
+            Route::Io(handler)    => enqueue_on_pool(stream, req, handler, &state.pools.io,    state),
+            Route::NotFound => {
+                let body = format!(
+                    r#"{{"error":"not_found","path":"{}","request_id":"{}"}}"#,
+                    path, req_id
+                );
+                write_response(stream, 404, "Not Found", req_id, body.as_bytes())
+            }
+        }
+} 
 
 /// Convierte la query-string `a=1&b=2` en `HashMap`.
 fn parse_query(qs: &str) -> HashMap<String, String> {
@@ -401,4 +421,4 @@ fn write_response_with_retry_after(
     stream.write_all(body)?;
     stream.flush()?;
     Ok(())
-}
+}   
